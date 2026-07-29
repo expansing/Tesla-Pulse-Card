@@ -766,17 +766,21 @@ class TeslaPulseCardEditor extends HTMLElement {
 try {
   if (!customElements.get("tesla-pulse-card")) {
     customElements.define("tesla-pulse-card", TeslaPulseCard);
+    console.log("[Tesla Pulse Card] Registered tesla-pulse-card element");
   }
 } catch (e) {
-  if (!e.message.includes("already been defined")) throw e;
+  console.error("[Tesla Pulse Card] Error registering tesla-pulse-card:", e);
+  throw e;
 }
 
 try {
   if (!customElements.get("tesla-pulse-card-editor")) {
     customElements.define("tesla-pulse-card-editor", TeslaPulseCardEditor);
+    console.log("[Tesla Pulse Card] Registered tesla-pulse-card-editor element");
   }
 } catch (e) {
-  if (!e.message.includes("already been defined")) throw e;
+  console.error("[Tesla Pulse Card] Error registering tesla-pulse-card-editor:", e);
+  throw e;
 }
 
 window.customCards = window.customCards || [];
@@ -787,4 +791,5 @@ if (!window.customCards.some(card => card.type === `custom:${CARD_TYPE}`)) {
     description: "Tesla Pulse-aware vehicle dashboard",
     preview: true,
   });
+  console.log("[Tesla Pulse Card] Registered custom card entry");
 }

@@ -7,6 +7,12 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-29
+
+### Added
+
+- Debug logging to console for element registration to help diagnose loading issues.
+
 ## [0.1.3] - 2026-07-29
 
 ### Fixed
