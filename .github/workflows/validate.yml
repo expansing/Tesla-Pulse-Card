@@ -20,7 +20,8 @@ jobs:
           test -f VERSION
           test -f CHANGELOG.md
           jq -e '.name and .filename and (.render_readme == true) and (.content_in_root == false)' hacs.json > /dev/null
-          test "$(jq -r '.filename' hacs.json)" = "tesla-pulse-card.js"
+          FILENAME="$(jq -r '.filename' hacs.json)"
+          test -f "$FILENAME" || (echo "File not found: $FILENAME"; exit 1)
 
       - name: Validate VERSION and changelog
         run: |
