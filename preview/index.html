@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tesla Pulse Card Preview</title>
+    <style>
+      :root { color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; }
+      body { min-height: 100vh; margin: 0; padding: 40px 20px; background: #dfe5df; }
+      main { width: min(720px, 100%); margin: 0 auto; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <tesla-pulse-card id="card"></tesla-pulse-card>
+    </main>
+    <script type="module">
+      import "../dist/tesla-pulse-card.js";
+
+      const now = new Date().toISOString();
+      const state = (value, unit, attributes = {}) => ({ state: String(value), attributes: { ...(unit ? { unit_of_measurement: unit } : {}), ...attributes } });
+      const hass = {
+        states: {
+          "sensor.model_y_battery_level": state(78, "%"),
+          "sensor.model_y_battery_range": state(326, "km"),
+          "number.model_y_charge_limit": state(80, "%"),
+          "sensor.model_y_charging_state": state("Charging"),
+          "sensor.model_y_charge_power": state(7.1, "kW"),
+          "sensor.model_y_charge_rate": state(42, "km/h"),
+          "sensor.model_y_time_to_full_charge": state(1.5, "h"),
+          "lock.model_y_lock": state("locked"),
+          "climate.model_y_climate": state("heat_cool"),
+          "switch.model_y_sentry_mode": state("on"),
+          "switch.model_y_charge_port": state("on"),
+          "cover.model_y_windows": state("closed"),
+          "cover.model_y_frunk": state("closed"),
+          "cover.model_y_trunk": state("closed"),
+          "sensor.model_y_inside_temp": state(21, "C"),
+          "sensor.model_y_outside_temp": state(17, "C"),
+          "sensor.model_y_telemetry_status": state("receiving", undefined, { last_received: now }),
+          "sensor.model_y_battery_balance_score": state(97, "%"),
+          "sensor.model_y_brick_voltage_imbalance": state(12, "mV"),
+        },
+        callService: (domain, service, data) => console.info("Tesla Pulse command", { domain, service, data }),
+      };
+      const card = document.getElementById("card");
+      card.setConfig({
+        title: "Juniper",
+      });
+      card.hass = hass;
+    </script>
+  </body>
+</html>

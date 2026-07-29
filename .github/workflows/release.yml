@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (example: v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate tag format
+        run: |
+          echo "${{ steps.vars.outputs.tag }}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$'
+
+      - name: Validate VERSION matches tag
+        id: version
+        run: |
+          set -e
+          TAG_VERSION="${{ steps.vars.outputs.tag }}"
+          TAG_VERSION="${TAG_VERSION#v}"
+          FILE_VERSION="$(tr -d '[:space:]' < VERSION)"
+          test "$TAG_VERSION" = "$FILE_VERSION"
+          echo "value=$FILE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build release notes from changelog
+        run: |
+          set -e
+          VERSION_VALUE="${{ steps.version.outputs.value }}"
+          awk -v version="$VERSION_VALUE" '
+            BEGIN { section=0 }
+            $0 ~ "^## \\[[^]]+\\]" {
+              if ($0 == "## [" version "]" || index($0, "## [" version "] -") == 1) {
+                section=1
+                next
+              }
+              if (section==1) { section=0 }
+            }
+            section==1 { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          test -s RELEASE_NOTES.md
+
+      - name: Verify build artifact
+        run: |
+          test -f dist/tesla-pulse-card.js
+
+      - name: Create release archive
+        run: |
+          mkdir -p release
+          cp dist/tesla-pulse-card.js release/tesla-pulse-card.js
+          cp hacs.json release/hacs.json
+          cp README.md release/README.md
+          cp VERSION release/VERSION
+          cp CHANGELOG.md release/CHANGELOG.md
+          cd release
+          zip -r ../tesla-pulse-card.zip .
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            tesla-pulse-card.zip
+            dist/tesla-pulse-card.js
