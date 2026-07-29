@@ -763,6 +763,7 @@ class TeslaPulseCardEditor extends HTMLElement {
   }
 }
 
+customElements.define("tesla-pulse-card", TeslaPulseCard);
 customElements.define("tesla-pulse-card-editor", TeslaPulseCardEditor);
 
 window.customCards = window.customCards || [];
