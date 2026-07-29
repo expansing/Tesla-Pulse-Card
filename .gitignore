@@ -1,7 +1,7 @@
 # OS / file manager noise
 .DS_Store
 Thumbs.db
-.github/instructions/*
+.github/instructions/instructions.instructions.md
 # Editor / IDE
 .idea/
 .vscode/
