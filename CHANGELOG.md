@@ -7,6 +7,14 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-29
+
+### Fixed
+
+- Move card file to repository root for HACS compatibility (fixes "invalid file name" error).
+- Add guard checks to prevent duplicate custom element registration.
+- Update release and validation workflows to reference root card file.
+
 ## [0.1.1] - 2026-07-29
 
 ### Fixed
