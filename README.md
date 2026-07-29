@@ -17,6 +17,27 @@ opening cargo areas.
 Open `preview/index.html` in a browser. It uses fixture Home Assistant state and
 loads the same card resource shipped from `dist/tesla-pulse-card.js`.
 
+## Installation
+
+### Option 1: HACS (Recommended)
+
+1. Open Home Assistant and go to **HACS** → **Frontend**.
+2. Click **Explore & Download Repositories** and search for **Tesla Pulse Card**.
+3. Click **Install**.
+4. Restart Home Assistant or reload the Lovelace dashboards:
+   - Developer Tools → YAML → **Reload custom cards**
+5. Add the card to your dashboard.
+
+### Option 2: Manual Installation
+
+1. Copy `dist/tesla-pulse-card.js` to your Home Assistant `config/www/` folder.
+2. In Home Assistant, go to **Settings** → **Dashboards** → **Resources** (top right).
+3. Click **Create Resource** and add:
+   - **URL**: `/local/tesla-pulse-card.js`
+   - **Resource type**: `JavaScript Module`
+4. Reload your browser.
+5. Add the card to your dashboard by selecting **Custom: Tesla Pulse Card**.
+
 ## Home Assistant Configuration
 
 Configuration works in both places:
