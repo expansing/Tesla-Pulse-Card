@@ -7,6 +7,12 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-29
+
+### Fixed
+
+- Improve error handling for scoped custom element registry to gracefully handle duplicate definition attempts.
+
 ## [0.1.2] - 2026-07-29
 
 ### Fixed

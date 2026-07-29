@@ -763,11 +763,20 @@ class TeslaPulseCardEditor extends HTMLElement {
   }
 }
 
-if (!customElements.get("tesla-pulse-card")) {
-  customElements.define("tesla-pulse-card", TeslaPulseCard);
+try {
+  if (!customElements.get("tesla-pulse-card")) {
+    customElements.define("tesla-pulse-card", TeslaPulseCard);
+  }
+} catch (e) {
+  if (!e.message.includes("already been defined")) throw e;
 }
-if (!customElements.get("tesla-pulse-card-editor")) {
-  customElements.define("tesla-pulse-card-editor", TeslaPulseCardEditor);
+
+try {
+  if (!customElements.get("tesla-pulse-card-editor")) {
+    customElements.define("tesla-pulse-card-editor", TeslaPulseCardEditor);
+  }
+} catch (e) {
+  if (!e.message.includes("already been defined")) throw e;
 }
 
 window.customCards = window.customCards || [];
