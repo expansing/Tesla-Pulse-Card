@@ -485,7 +485,9 @@ class TeslaPulseCard extends HTMLElement {
   }
 }
 
-customElements.define(CARD_TYPE, TeslaPulseCard);
+if (!customElements.get(CARD_TYPE)) {
+  customElements.define(CARD_TYPE, TeslaPulseCard);
+}
 
 const EDITOR_ENTITY_FIELDS = [
   ["battery", "Battery level entity"],
@@ -763,33 +765,16 @@ class TeslaPulseCardEditor extends HTMLElement {
   }
 }
 
-try {
-  if (!customElements.get("tesla-pulse-card")) {
-    customElements.define("tesla-pulse-card", TeslaPulseCard);
-    console.log("[Tesla Pulse Card] Registered tesla-pulse-card element");
-  }
-} catch (e) {
-  console.error("[Tesla Pulse Card] Error registering tesla-pulse-card:", e);
-  throw e;
-}
-
-try {
-  if (!customElements.get("tesla-pulse-card-editor")) {
-    customElements.define("tesla-pulse-card-editor", TeslaPulseCardEditor);
-    console.log("[Tesla Pulse Card] Registered tesla-pulse-card-editor element");
-  }
-} catch (e) {
-  console.error("[Tesla Pulse Card] Error registering tesla-pulse-card-editor:", e);
-  throw e;
+if (!customElements.get("tesla-pulse-card-editor")) {
+  customElements.define("tesla-pulse-card-editor", TeslaPulseCardEditor);
 }
 
 window.customCards = window.customCards || [];
-if (!window.customCards.some(card => card.type === `custom:${CARD_TYPE}`)) {
+if (!window.customCards.some((card) => card.type === CARD_TYPE)) {
   window.customCards.push({
-    type: `custom:${CARD_TYPE}`,
+    type: CARD_TYPE,
     name: "Tesla Pulse Card",
     description: "Tesla Pulse-aware vehicle dashboard",
     preview: true,
   });
-  console.log("[Tesla Pulse Card] Registered custom card entry");
 }

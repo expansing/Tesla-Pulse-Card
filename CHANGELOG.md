@@ -7,6 +7,14 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-29
+
+### Fixed
+
+- Register the main custom element only once.
+- Advertise `tesla-pulse-card` in the card picker without the YAML-only
+	`custom:` prefix.
+
 ## [0.1.4] - 2026-07-29
 
 ### Added
