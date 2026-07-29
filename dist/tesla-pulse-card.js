@@ -763,13 +763,19 @@ class TeslaPulseCardEditor extends HTMLElement {
   }
 }
 
-customElements.define("tesla-pulse-card", TeslaPulseCard);
-customElements.define("tesla-pulse-card-editor", TeslaPulseCardEditor);
+if (!customElements.get("tesla-pulse-card")) {
+  customElements.define("tesla-pulse-card", TeslaPulseCard);
+}
+if (!customElements.get("tesla-pulse-card-editor")) {
+  customElements.define("tesla-pulse-card-editor", TeslaPulseCardEditor);
+}
 
 window.customCards = window.customCards || [];
-window.customCards.push({
-  type: `custom:${CARD_TYPE}`,
-  name: "Tesla Pulse Card",
-  description: "Tesla Pulse-aware vehicle dashboard",
-  preview: true,
-});
+if (!window.customCards.some(card => card.type === `custom:${CARD_TYPE}`)) {
+  window.customCards.push({
+    type: `custom:${CARD_TYPE}`,
+    name: "Tesla Pulse Card",
+    description: "Tesla Pulse-aware vehicle dashboard",
+    preview: true,
+  });
+}
