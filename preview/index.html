@@ -15,7 +15,7 @@
       <tesla-pulse-card id="card"></tesla-pulse-card>
     </main>
     <script type="module">
-      import "../dist/tesla-pulse-card.js";
+      import "../tesla-pulse-card.js";
 
       const now = new Date().toISOString();
       const state = (value, unit, attributes = {}) => ({ state: String(value), attributes: { ...(unit ? { unit_of_measurement: unit } : {}), ...attributes } });

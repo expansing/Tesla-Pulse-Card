@@ -1,6 +1,6 @@
 {
   "name": "Tesla Pulse Card",
   "render_readme": true,
-  "filename": "dist/tesla-pulse-card.js",
+  "filename": "tesla-pulse-card.js",
   "content_in_root": false
 }
