@@ -30,4 +30,4 @@ jobs:
           grep -F "## [$VERSION_VALUE]" CHANGELOG.md
 
       - name: Validate JavaScript syntax
-        run: node --check dist/tesla-pulse-card.js
+        run: node --check tesla-pulse-card.js

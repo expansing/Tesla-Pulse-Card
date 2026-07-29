@@ -15,7 +15,7 @@ opening cargo areas.
 ## Development Preview
 
 Open `preview/index.html` in a browser. It uses fixture Home Assistant state and
-loads the same card resource shipped from `dist/tesla-pulse-card.js`.
+loads the same card resource shipped from `tesla-pulse-card.js`.
 
 ## Installation
 
@@ -30,7 +30,7 @@ loads the same card resource shipped from `dist/tesla-pulse-card.js`.
 
 ### Option 2: Manual Installation
 
-1. Copy `dist/tesla-pulse-card.js` to your Home Assistant `config/www/` folder.
+1. Copy `tesla-pulse-card.js` to your Home Assistant `config/www/` folder.
 2. In Home Assistant, go to **Settings** → **Dashboards** → **Resources** (top right).
 3. Click **Create Resource** and add:
    - **URL**: `/local/tesla-pulse-card.js`

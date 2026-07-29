@@ -10,7 +10,7 @@
 1. Update card behavior and documentation as needed.
 2. Bump `VERSION` (example: `0.1.1`).
 3. Add a matching section to `CHANGELOG.md` with the same version number.
-4. Verify `dist/tesla-pulse-card.js` is the artifact you want to ship.
+4. Verify `tesla-pulse-card.js` is the artifact you want to ship.
 5. Commit changes.
 6. Create and push a matching semantic tag, for example `v0.1.1`.
 7. Wait for the GitHub Actions Release workflow to publish the release.
@@ -31,7 +31,7 @@ git push origin main --tags
 ## Notes
 
 - Validation runs on every push and pull request.
-- The release workflow uploads both `dist/tesla-pulse-card.js` and
+- The release workflow uploads both `tesla-pulse-card.js` and
   `tesla-pulse-card.zip`.
 - The release workflow fails if tag, `VERSION`, and `CHANGELOG.md` are not in
   sync.

@@ -62,12 +62,12 @@ jobs:
 
       - name: Verify build artifact
         run: |
-          test -f dist/tesla-pulse-card.js
+          test -f tesla-pulse-card.js
 
       - name: Create release archive
         run: |
           mkdir -p release
-          cp dist/tesla-pulse-card.js release/tesla-pulse-card.js
+          cp tesla-pulse-card.js release/tesla-pulse-card.js
           cp hacs.json release/hacs.json
           cp README.md release/README.md
           cp VERSION release/VERSION
@@ -82,4 +82,4 @@ jobs:
           body_path: RELEASE_NOTES.md
           files: |
             tesla-pulse-card.zip
-            dist/tesla-pulse-card.js
+            tesla-pulse-card.js
