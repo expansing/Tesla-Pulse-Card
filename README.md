@@ -42,14 +42,15 @@ loads the same card resource shipped from `tesla-pulse-card.js`.
 
 Configuration works in both places:
 
-- Home Assistant visual card editor (recommended for title, image,
+- Home Assistant visual card editor (recommended for title,
   confirmations, display options, quick actions, and common entity overrides)
 - YAML editor (full manual control)
 
 ```yaml
 type: custom:tesla-pulse-card
 title: Juniper
-image: /local/vehicles/juniper.jpg
+entityMode: manual
+themeMode: auto
 confirmations:
   unlock: true
   cargo: true
@@ -58,10 +59,17 @@ entities:
   range: sensor.juniper_battery_range
   chargeLimit: number.juniper_charge_limit
   telemetry: sensor.juniper_telemetry_status
+  vehicleAwake: sensor.juniper_vehicle_awake_status
+  odometer: sensor.juniper_odometer
+  frontLeftTirePressure: sensor.juniper_front_left_tire_pressure
+  wake: button.juniper_wake_up
+  honk: button.juniper_honk_horn
 quickActions:
   - lock
   - climate
   - sentry
+  - wake
+  - honk
 display:
   compact: false
   showHero: true
@@ -71,9 +79,27 @@ display:
   showHealth: true
 ```
 
-The card resolves the remaining Tesla Pulse entities by their stable unique-ID
-suffix where possible. Add an `entities` override for any entity whose ID does
-not match the integration default.
+By default, `entityMode` is `auto`: the card resolves Tesla Pulse entities by
+their stable unique-ID suffix and accepts individual `entities` overrides. Set
+`entityMode: manual` to disable auto-detection and use only entities you select
+in the visual editor or declare under `entities`.
+
+The systems matrix focuses on useful at-a-glance data: odometer, remaining
+energy, battery heater, pack voltage/current, charging input, cable/latch
+state, and all four tire pressures. The editor also supports selectable command
+entities for wake, lock, climate, sentry, charge-port and window operations,
+frunk/trunk, defrost, lights, horn, preconditioning, and fart. Home Assistant
+`button` entities are invoked with `button.press` automatically. Adjustable
+entities such as charge limit, target temperature, seat heaters, steering-wheel
+heat, and Windows open Home Assistant's native detail control.
+
+The card includes a local, interactive WebGL Model 3-style digital twin with
+drag rotation and spatial frunk, trunk, lock, and climate controls. It does
+not load a vehicle image or external model at runtime. Spatial controls appear
+only when their corresponding Home Assistant entity is configured or detected.
+
+Set `themeMode` to `auto`, `black`, or `white`. Auto follows Home Assistant's
+current light/dark theme and applies the selected appearance to the entire card.
 
 ## HACS Release Flow
 
