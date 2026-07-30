@@ -61,6 +61,7 @@ const DEFAULT_CONFIG = {
   entities: {},
   entityMode: "auto",
   themeMode: "auto",
+  vehicleColor: "factory",
   quickActions: ["sentry", "chargePort", "wake", "honk", "flashLights", "defrost"],
   display: {
     compact: false,
@@ -108,6 +109,15 @@ const ACTION_DEFINITIONS = {
 
 const SPATIAL_ACTIONS = new Set(["lock", "climate", "frunk", "openFrunk", "trunk", "openTrunk"]);
 
+const VEHICLE_COLORS = {
+  factory: { label: "Factory finish", hex: "#ffffff" },
+  black: { label: "Solid black", hex: "#161719" },
+  white: { label: "Pearl white", hex: "#f5f6f4" },
+  red: { label: "Ultra red", hex: "#7b0b19" },
+  blue: { label: "Deep blue", hex: "#1e4d86" },
+  gray: { label: "Stealth gray", hex: "#52575c" },
+};
+
 class TeslaPulseCard extends HTMLElement {
   static async getConfigElement() {
     return document.createElement("tesla-pulse-card-editor");
@@ -136,6 +146,7 @@ class TeslaPulseCard extends HTMLElement {
       ...config,
       entities: { ...DEFAULT_CONFIG.entities, ...(config.entities || {}) },
       themeMode: ["black", "white"].includes(config.themeMode) ? config.themeMode : "auto",
+      vehicleColor: VEHICLE_COLORS[config.vehicleColor] ? config.vehicleColor : DEFAULT_CONFIG.vehicleColor,
       quickActions: this._sanitizeQuickActions(config.quickActions),
       display: {
         ...DEFAULT_CONFIG.display,
@@ -151,7 +162,14 @@ class TeslaPulseCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    this._render();
+    if (!this._config) {
+      return;
+    }
+    if (!this.shadowRoot || !this._isRendered) {
+      this._render();
+      return;
+    }
+    this._refreshLiveContent();
   }
 
   getCardSize() {
@@ -194,13 +212,40 @@ class TeslaPulseCard extends HTMLElement {
     return Number.isFinite(value) ? value : undefined;
   }
 
-  _value(key, fallback = "Unavailable") {
-    const state = this._state(key);
+  _formatNumericValue(value, maximumFractionDigits = 2) {
+    return new Intl.NumberFormat(undefined, {
+      useGrouping: false,
+      minimumFractionDigits: 0,
+      maximumFractionDigits,
+    }).format(value);
+  }
+
+  _formatStateValue(state, fallback = "Unavailable") {
     if (!state || ["unknown", "unavailable", "none"].includes(state.state)) {
       return fallback;
     }
+    const value = Number.parseFloat(state.state);
     const unit = state.attributes?.unit_of_measurement;
-    return unit ? `${state.state} ${unit}` : state.state;
+    if (!Number.isFinite(value)) {
+      return unit ? `${state.state} ${unit}` : state.state;
+    }
+    const decimalsByUnit = {
+      "%": 0,
+      km: 1,
+      kWh: 2,
+      V: 2,
+      A: 2,
+      bar: 2,
+      mV: 0,
+      C: 1,
+    };
+    const maxDigits = decimalsByUnit[unit] ?? 2;
+    const formatted = this._formatNumericValue(value, maxDigits);
+    return unit ? `${formatted} ${unit}` : formatted;
+  }
+
+  _value(key, fallback = "Unavailable") {
+    return this._formatStateValue(this._state(key), fallback);
   }
 
   _formattedVoltageImbalance() {
@@ -214,9 +259,221 @@ class TeslaPulseCard extends HTMLElement {
       return this._value("voltageImbalance", "Not received");
     }
 
-    const rounded = Math.round(value * 100) / 100;
+    const rounded = Math.round(value);
     const unit = state.attributes?.unit_of_measurement;
     return unit ? `${rounded} ${unit}` : String(rounded);
+  }
+
+  _spatialControls() {
+    const frunkAction = this._entityId("openFrunk") ? "openFrunk" : "frunk";
+    const trunkAction = this._entityId("openTrunk") ? "openTrunk" : "trunk";
+    return [
+      {
+        anchor: "trunk",
+        action: trunkAction,
+        label: "Trunk",
+        ariaLabel: "Open trunk",
+        icon: "car-back",
+      },
+      {
+        anchor: "lock",
+        action: "lock",
+        label: this._isLocked() ? "Unlock" : "Lock",
+        ariaLabel: this._isLocked() ? "Unlock vehicle" : "Lock vehicle",
+        icon: this._isLocked() ? "lock" : "lock-open-variant",
+      },
+      {
+        anchor: "climate",
+        action: "climate",
+        label: "Climate",
+        ariaLabel: "Toggle climate",
+        icon: "fan",
+      },
+      {
+        anchor: "frunk",
+        action: frunkAction,
+        label: "Frunk",
+        ariaLabel: "Open frunk",
+        icon: "car",
+      },
+    ].filter(({ action }) => Boolean(this._entityId(action)));
+  }
+
+  _refreshLiveContent() {
+    const root = this.shadowRoot;
+    if (!root || this._pendingAction) {
+      this._render();
+      return;
+    }
+
+    const expectedSpatialActions = this._spatialControls().map((control) => control.action).join("|");
+    const renderedSpatialActions = [...root.querySelectorAll(".vehicle-hotspot")]
+      .map((button) => button.dataset.action)
+      .join("|");
+    if (expectedSpatialActions !== renderedSpatialActions) {
+      this._render();
+      return;
+    }
+
+    const battery = this._number("battery");
+    const range = this._number("range");
+    const chargeLimit = this._number("chargeLimit");
+    const chargeState = this._value("chargeState", "Disconnected");
+    const isCharging = chargeState.toLowerCase() === "charging";
+    const batteryProgress = Math.min(100, Math.max(0, battery ?? 0));
+    const chargeLimitProgress = Math.min(100, Math.max(0, chargeLimit ?? 0));
+    const telemetry = this._telemetry();
+    const awakeStatus = this._awakeStatus();
+
+    const awakeNode = root.querySelector(".awake-state");
+    if (awakeNode) {
+      awakeNode.classList.toggle("is-awake", awakeStatus.active);
+      awakeNode.innerHTML = `<i></i>${this._escape(awakeStatus.label)}`;
+    }
+
+    const telemetryNode = root.querySelector(".telemetry");
+    if (telemetryNode) {
+      telemetryNode.className = `telemetry ${telemetry.state}`;
+      const labelNode = telemetryNode.querySelector(".telemetry-label");
+      const detailNode = telemetryNode.querySelector("span:last-child");
+      if (labelNode) labelNode.textContent = telemetry.label;
+      if (detailNode) detailNode.textContent = telemetry.detail;
+    }
+
+    const batteryOrbitValue = root.querySelector(".battery-orbit .orbit-value");
+    if (batteryOrbitValue) {
+      batteryOrbitValue.innerHTML = `${battery === undefined ? "--" : Math.round(battery)}<small>%</small>`;
+    }
+    const batteryOrbitDetail = root.querySelector(".battery-orbit .orbit-detail");
+    if (batteryOrbitDetail) {
+      batteryOrbitDetail.textContent = chargeState;
+    }
+
+    const rangeOrbitValue = root.querySelector(".range-orbit .orbit-value");
+    if (rangeOrbitValue) {
+      rangeOrbitValue.innerHTML = `${range === undefined ? "--" : Math.round(range)}<small>${range === undefined ? "" : "km"}</small>`;
+    }
+    const rangeOrbitDetail = root.querySelector(".range-orbit .orbit-detail");
+    if (rangeOrbitDetail) {
+      rangeOrbitDetail.textContent = chargeLimit === undefined ? "No limit" : `Limit ${Math.round(chargeLimit)}%`;
+    }
+
+    const stageStates = [...root.querySelectorAll(".stage-ribbon .stage-state")];
+    if (stageStates.length === 4) {
+      const stageModels = [
+        {
+          active: this._isOn("climate"),
+          alert: false,
+          value: this._isOn("climate") ? "Climate active" : this._value("insideTemperature", "Climate off"),
+        },
+        {
+          active: !this._isLocked(),
+          alert: !this._isLocked(),
+          value: this._isLocked() ? "Secured" : "Unlocked",
+        },
+        {
+          active: this._isOn("sentry"),
+          alert: false,
+          value: this._isOn("sentry") ? "Sentry armed" : "Sentry off",
+        },
+        {
+          active: this._isOn("windows"),
+          alert: this._isOn("windows"),
+          value: this._isOn("windows") ? "Open" : "Closed",
+        },
+      ];
+      stageStates.forEach((node, index) => {
+        const model = stageModels[index];
+        node.classList.toggle("is-active", model.active);
+        node.classList.toggle("is-alert", !model.active && model.alert);
+        const valueNode = node.querySelector("strong");
+        if (valueNode) valueNode.textContent = model.value;
+      });
+    }
+
+    const energyRail = root.querySelector(".energy-rail");
+    if (energyRail) {
+      energyRail.setAttribute("aria-label", `Battery level ${batteryProgress} percent`);
+      const energyFill = energyRail.querySelector(".energy-fill");
+      if (energyFill) {
+        energyFill.style.width = `${batteryProgress}%`;
+        energyFill.style.minWidth = battery === undefined ? "0" : "6px";
+        energyFill.style.background = isCharging ? "var(--lime)" : "var(--ice)";
+        energyFill.style.boxShadow = isCharging
+          ? "0 0 18px rgba(98, 230, 167, 0.62)"
+          : "0 0 18px rgba(169, 239, 255, 0.5)";
+      }
+      const energyCaption = energyRail.querySelector(".energy-caption");
+      if (energyCaption) {
+        energyCaption.textContent = isCharging ? "Energy flowing" : "High-voltage reserve";
+      }
+      const energyLimit = energyRail.querySelector(".energy-limit");
+      if (energyLimit) {
+        energyLimit.style.left = `calc(${chargeLimitProgress}% - 1px)`;
+        energyLimit.hidden = chargeLimit === undefined;
+      }
+    }
+
+    const chargingReadout = root.querySelector(".charging-readout");
+    if (chargingReadout) {
+      chargingReadout.hidden = !(isCharging && this._config.display.showCharging);
+      const chargingValues = [...chargingReadout.querySelectorAll(".charging-values span")];
+      if (chargingValues.length === 3) {
+        chargingValues[0].textContent = this._value("chargePower", "Power unavailable");
+        chargingValues[1].textContent = this._value("chargeRate", "Rate unavailable");
+        chargingValues[2].textContent = this._value("timeToFull", "ETA unavailable");
+      }
+    }
+
+    const systemValues = [
+      this._value("insideTemperature", "Not received"),
+      this._value("outsideTemperature", "Not received"),
+      this._value("odometer", "Not received"),
+      this._value("energyRemaining", "Not received"),
+      this._value("packVoltage", "Not received"),
+      this._value("packCurrent", "Not received"),
+      this._value("batteryHeater", "Not received"),
+      this._value("batteryBalance", "Not received"),
+      this._formattedVoltageImbalance(),
+      this._value("chargeCurrent", "Not received"),
+      this._value("chargerVoltage", "Not received"),
+      this._value("chargeEnergyAdded", "Not received"),
+      this._value("chargingCableType", "Not received"),
+      this._value("chargePortLatch", "Not received"),
+      this._value("frontLeftTirePressure", "Not received"),
+      this._value("frontRightTirePressure", "Not received"),
+      this._value("rearLeftTirePressure", "Not received"),
+      this._value("rearRightTirePressure", "Not received"),
+    ];
+    [...root.querySelectorAll(".systems .system-row strong")].forEach((node, index) => {
+      if (index < systemValues.length) {
+        node.textContent = systemValues[index];
+      }
+    });
+
+    const lockHotspot = root.querySelector('.vehicle-hotspot[data-vehicle-anchor="lock"]');
+    if (lockHotspot) {
+      const label = this._isLocked() ? "Unlock" : "Lock";
+      const ariaLabel = this._isLocked() ? "Unlock vehicle" : "Lock vehicle";
+      lockHotspot.dataset.label = label;
+      lockHotspot.setAttribute("title", ariaLabel);
+      lockHotspot.setAttribute("aria-label", ariaLabel);
+      const icon = lockHotspot.querySelector("ha-icon");
+      if (icon) {
+        icon.setAttribute("icon", `mdi:${this._isLocked() ? "lock" : "lock-open-variant"}`);
+      }
+    }
+
+    root.querySelectorAll(".command-deck .control[data-action]").forEach((control) => {
+      const action = control.dataset.action;
+      const definition = ACTION_DEFINITIONS[action];
+      if (!definition || definition.moreInfo) {
+        control.classList.remove("is-active");
+        return;
+      }
+      const active = action === "lock" ? this._isLocked() : this._isOn(action);
+      control.classList.toggle("is-active", active);
+    });
   }
 
   _isOn(key) {
@@ -299,8 +556,8 @@ class TeslaPulseCard extends HTMLElement {
 
   _vehicleRenderMarkup() {
     return `
-      <canvas class="vehicle-canvas" aria-label="Interactive 3D electric sports sedan"></canvas>
-      <svg class="vehicle-vector vehicle-render-fallback" viewBox="0 0 720 300" role="img" aria-label="Model 3-style digital vehicle twin">
+      <canvas class="vehicle-canvas" aria-label="Interactive 3D Cybertruck"></canvas>
+      <svg class="vehicle-vector vehicle-render-fallback" viewBox="0 0 720 300" role="img" aria-label="Fallback electric vehicle render">
         <defs>
           <linearGradient id="body-metal" x1="0" y1="0" x2="0.86" y2="1">
             <stop offset="0" stop-color="#f9fbfc" />
@@ -381,11 +638,11 @@ class TeslaPulseCard extends HTMLElement {
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(27, 2.25, 0.1, 100);
-    camera.position.set(1.55, 1.9, 8.1);
-    camera.lookAt(0, 0.55, 0);
+    camera.position.set(5.7, 1.25, 5.2);
+    camera.lookAt(0, 0.42, 0);
 
     const vehicle = new THREE.Group();
-    vehicle.rotation.y = 0;
+    vehicle.rotation.y = -0.5;
     scene.add(vehicle);
 
     const bodyMaterial = new THREE.MeshPhysicalMaterial({
@@ -397,11 +654,11 @@ class TeslaPulseCard extends HTMLElement {
     });
     const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x10171a, metalness: 0.55, roughness: 0.28 });
     const glassMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1e6172,
-      emissive: 0x08242d,
-      emissiveIntensity: 0.5,
-      metalness: 0.55,
-      roughness: 0.18,
+      color: 0x142833,
+      emissive: 0x0a161d,
+      emissiveIntensity: 0.22,
+      metalness: 0.62,
+      roughness: 0.2,
     });
     const tireMaterial = new THREE.MeshStandardMaterial({ color: 0x07090a, roughness: 0.82 });
     const rimMaterial = new THREE.MeshStandardMaterial({ color: 0xaab8bd, metalness: 0.9, roughness: 0.18 });
@@ -443,54 +700,74 @@ class TeslaPulseCard extends HTMLElement {
     };
 
     const bodyGeometry = createLoftGeometry([
-      { x: -2.5, centerY: 0.34, halfHeight: 0.2, halfWidth: 0.3 },
-      { x: -2.25, centerY: 0.4, halfHeight: 0.31, halfWidth: 0.65 },
-      { x: -1.65, centerY: 0.43, halfHeight: 0.38, halfWidth: 0.83 },
-      { x: -0.8, centerY: 0.44, halfHeight: 0.4, halfWidth: 0.88 },
-      { x: 0.15, centerY: 0.45, halfHeight: 0.41, halfWidth: 0.9 },
-      { x: 1.05, centerY: 0.43, halfHeight: 0.38, halfWidth: 0.86 },
-      { x: 1.82, centerY: 0.39, halfHeight: 0.31, halfWidth: 0.73 },
-      { x: 2.36, centerY: 0.32, halfHeight: 0.21, halfWidth: 0.46 },
-      { x: 2.53, centerY: 0.29, halfHeight: 0.1, halfWidth: 0.18 },
+      { x: -2.55, centerY: 0.27, halfHeight: 0.06, halfWidth: 0.16 },
+      { x: -2.28, centerY: 0.31, halfHeight: 0.12, halfWidth: 0.44 },
+      { x: -1.78, centerY: 0.35, halfHeight: 0.16, halfWidth: 0.71 },
+      { x: -1.0, centerY: 0.37, halfHeight: 0.18, halfWidth: 0.82 },
+      { x: -0.1, centerY: 0.38, halfHeight: 0.2, halfWidth: 0.86 },
+      { x: 0.8, centerY: 0.37, halfHeight: 0.18, halfWidth: 0.82 },
+      { x: 1.55, centerY: 0.34, halfHeight: 0.15, halfWidth: 0.7 },
+      { x: 2.1, centerY: 0.3, halfHeight: 0.11, halfWidth: 0.5 },
+      { x: 2.45, centerY: 0.27, halfHeight: 0.08, halfWidth: 0.28 },
+      { x: 2.6, centerY: 0.25, halfHeight: 0.04, halfWidth: 0.1 },
     ]);
     vehicle.add(new THREE.Mesh(bodyGeometry, bodyMaterial));
 
     const roofGeometry = createLoftGeometry([
-      { x: -1.2, centerY: 0.72, halfHeight: 0.12, halfWidth: 0.56 },
-      { x: -0.88, centerY: 0.74, halfHeight: 0.46, halfWidth: 0.7 },
-      { x: -0.32, centerY: 0.76, halfHeight: 0.7, halfWidth: 0.76 },
-      { x: 0.35, centerY: 0.76, halfHeight: 0.72, halfWidth: 0.74 },
-      { x: 0.95, centerY: 0.73, halfHeight: 0.52, halfWidth: 0.62 },
-      { x: 1.36, centerY: 0.68, halfHeight: 0.12, halfWidth: 0.38 },
+      { x: -0.98, centerY: 0.59, halfHeight: 0.05, halfWidth: 0.36 },
+      { x: -0.55, centerY: 0.74, halfHeight: 0.1, halfWidth: 0.47 },
+      { x: 0.05, centerY: 0.83, halfHeight: 0.12, halfWidth: 0.51 },
+      { x: 0.66, centerY: 0.77, halfHeight: 0.1, halfWidth: 0.46 },
+      { x: 1.2, centerY: 0.64, halfHeight: 0.06, halfWidth: 0.34 },
     ], 24, true);
     vehicle.add(new THREE.Mesh(roofGeometry, glassMaterial));
 
-    const lowerBody = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.18, 1.56), darkMaterial);
-    lowerBody.position.set(0, 0.02, 0);
+    const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.3, 1.05), darkMaterial);
+    windshield.position.set(-0.69, 0.71, 0);
+    windshield.rotation.z = 0.34;
+    vehicle.add(windshield);
+
+    const rearWindow = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.95), darkMaterial);
+    rearWindow.position.set(0.98, 0.68, 0);
+    rearWindow.rotation.z = -0.42;
+    vehicle.add(rearWindow);
+
+    const lowerBody = new THREE.Mesh(new THREE.BoxGeometry(4.28, 0.12, 1.57), darkMaterial);
+    lowerBody.position.set(-0.02, -0.01, 0);
     vehicle.add(lowerBody);
 
-    const wheelGeometry = new THREE.CylinderGeometry(0.39, 0.39, 0.23, 36);
-    const rimGeometry = new THREE.CylinderGeometry(0.27, 0.27, 0.238, 20);
+    const frontNose = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.9), bodyMaterial);
+    frontNose.position.set(2.28, 0.4, 0);
+    frontNose.rotation.z = -0.08;
+    vehicle.add(frontNose);
+
+    const rearDeck = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.09, 0.84), bodyMaterial);
+    rearDeck.position.set(-2.23, 0.39, 0);
+    rearDeck.rotation.z = 0.12;
+    vehicle.add(rearDeck);
+
+    const wheelGeometry = new THREE.CylinderGeometry(0.33, 0.33, 0.22, 36);
+    const rimGeometry = new THREE.CylinderGeometry(0.22, 0.22, 0.228, 20);
     const hubGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.244, 16);
     const spokeGeometry = new THREE.BoxGeometry(0.045, 0.2, 0.025);
     for (const wheelX of [-1.65, 1.65]) {
       for (const wheelZ of [-0.82, 0.82]) {
         const wheel = new THREE.Mesh(wheelGeometry, tireMaterial);
         wheel.rotation.x = Math.PI / 2;
-        wheel.position.set(wheelX, 0.14, wheelZ);
+        wheel.position.set(wheelX, 0.11, wheelZ);
         vehicle.add(wheel);
         const rim = new THREE.Mesh(rimGeometry, rimMaterial);
         rim.rotation.x = Math.PI / 2;
-        rim.position.set(wheelX, 0.14, wheelZ * 1.01);
+        rim.position.set(wheelX, 0.11, wheelZ * 1.01);
         vehicle.add(rim);
         const hub = new THREE.Mesh(hubGeometry, darkMaterial);
         hub.rotation.x = Math.PI / 2;
-        hub.position.set(wheelX, 0.14, wheelZ * 1.02);
+        hub.position.set(wheelX, 0.11, wheelZ * 1.02);
         vehicle.add(hub);
         for (let index = 0; index < 5; index += 1) {
           const spoke = new THREE.Mesh(spokeGeometry, darkMaterial);
           spoke.rotation.set(0, 0, index * Math.PI / 2.5);
-          spoke.position.set(wheelX, 0.14, wheelZ * 1.025);
+          spoke.position.set(wheelX, 0.11, wheelZ * 1.025);
           vehicle.add(spoke);
         }
       }
@@ -508,6 +785,8 @@ class TeslaPulseCard extends HTMLElement {
     addDetail(new THREE.BoxGeometry(0.2, 0.08, 0.3), tailMaterial, [-2.3, 0.57, 0.54]);
     addDetail(new THREE.BoxGeometry(0.05, 0.08, 0.24), darkMaterial, [-0.34, 0.85, -0.78]);
     addDetail(new THREE.BoxGeometry(0.05, 0.08, 0.24), darkMaterial, [0.72, 0.85, -0.78]);
+    addDetail(new THREE.BoxGeometry(0.55, 0.03, 0.02), darkMaterial, [-0.2, 0.55, -0.89]);
+    addDetail(new THREE.BoxGeometry(0.55, 0.03, 0.02), darkMaterial, [0.48, 0.55, -0.89]);
     const leftMirror = addDetail(new THREE.SphereGeometry(0.13, 16, 8), darkMaterial, [0.94, 0.98, -0.84]);
     leftMirror.scale.set(1.05, 0.42, 0.5);
     const rightMirror = addDetail(new THREE.SphereGeometry(0.13, 16, 8), darkMaterial, [0.94, 0.98, 0.84]);
@@ -533,7 +812,7 @@ class TeslaPulseCard extends HTMLElement {
     canopyLight.position.set(0.3, 4.2, -1.4);
     scene.add(canopyLight);
 
-    const anchors = {
+    let anchors = {
       trunk: { point: new THREE.Vector3(-2.05, 0.78, 0), offsetY: 0 },
       lock: { point: new THREE.Vector3(-0.18, 0.88, -0.88), offsetY: 0 },
       climate: { point: new THREE.Vector3(0.28, 1.3, 0), offsetY: -38 },
@@ -544,6 +823,50 @@ class TeslaPulseCard extends HTMLElement {
     );
 
     let disposed = false;
+    const disposeObject = (object) => {
+      object.traverse((child) => {
+        child.geometry?.dispose?.();
+        if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose());
+        else child.material?.dispose?.();
+      });
+    };
+    const installCybertruck = (gltf) => {
+      if (disposed) {
+        disposeObject(gltf.scene);
+        return;
+      }
+
+      vehicle.children.forEach(disposeObject);
+      vehicle.clear();
+      const cybertruck = gltf.scene;
+      const vehicleColor = VEHICLE_COLORS[this._config.vehicleColor] || VEHICLE_COLORS.factory;
+      cybertruck.traverse((object) => {
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        materials.filter((material) => ["body_mat", "car_paint_mat"].includes(material?.name)).forEach((material) => {
+          material.color.set(vehicleColor.hex);
+          material.needsUpdate = true;
+        });
+      });
+      cybertruck.rotation.y = Math.PI / 2;
+      let bounds = new THREE.Box3().setFromObject(cybertruck);
+      const size = bounds.getSize(new THREE.Vector3());
+      const scale = 5.1 / Math.max(size.x, size.z);
+      cybertruck.scale.multiplyScalar(scale);
+      bounds = new THREE.Box3().setFromObject(cybertruck);
+      const center = bounds.getCenter(new THREE.Vector3());
+      cybertruck.position.set(-center.x, -bounds.min.y - 0.19, -center.z);
+      vehicle.add(cybertruck);
+
+      bounds = new THREE.Box3().setFromObject(vehicle);
+      const modelSize = bounds.getSize(new THREE.Vector3());
+      const modelCenter = bounds.getCenter(new THREE.Vector3());
+      anchors = {
+        trunk: { point: new THREE.Vector3(bounds.min.x + modelSize.x * 0.13, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 0 },
+        lock: { point: new THREE.Vector3(modelCenter.x, modelCenter.y + modelSize.y * 0.1, bounds.min.z + modelSize.z * 0.48), offsetY: 0 },
+        climate: { point: new THREE.Vector3(modelCenter.x, bounds.max.y - modelSize.y * 0.2, modelCenter.z), offsetY: -38 },
+        frunk: { point: new THREE.Vector3(bounds.max.x - modelSize.x * 0.13, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 0 },
+      };
+    };
     let frameId;
     let yaw = 0;
     let targetYaw = yaw;
@@ -556,6 +879,11 @@ class TeslaPulseCard extends HTMLElement {
       renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
+      const minimumFramingAspect = 1.8;
+      const referenceVerticalFov = THREE.MathUtils.degToRad(27);
+      const framingAspect = Math.max(camera.aspect, minimumFramingAspect);
+      const horizontalFov = 2 * Math.atan(Math.tan(referenceVerticalFov / 2) * framingAspect);
+      camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(horizontalFov / 2) / camera.aspect));
       camera.updateProjectionMatrix();
     };
     const updateHotspots = () => {
@@ -574,7 +902,7 @@ class TeslaPulseCard extends HTMLElement {
     const animate = (time) => {
       if (disposed) return;
       yaw += (targetYaw - yaw) * 0.08;
-      vehicle.rotation.y = yaw + (dragging ? 0 : Math.sin(time * 0.00035) * 0.025);
+      vehicle.rotation.y = yaw + (dragging ? 0 : Math.sin(time * 0.00022) * 0.008);
       updateHotspots();
       renderer.render(scene, camera);
       frameId = requestAnimationFrame(animate);
@@ -604,6 +932,26 @@ class TeslaPulseCard extends HTMLElement {
     canvas.classList.add("is-ready");
     frameId = requestAnimationFrame(animate);
 
+    const modelUrl = this._config.vehicleModelUrl?.trim();
+    const bundledModel = typeof TESLA_PULSE_CYBERTRUCK_GLB_BASE64 === "string"
+      ? TESLA_PULSE_CYBERTRUCK_GLB_BASE64
+      : "";
+    if (THREE.GLTFLoader && (modelUrl || bundledModel)) {
+      const loader = new THREE.GLTFLoader();
+      const onError = (error) => console.warn("Tesla Pulse Card could not load the Cybertruck model.", error);
+      if (modelUrl) {
+        loader.load(modelUrl, installCybertruck, undefined, onError);
+      } else {
+        try {
+          const binary = atob(bundledModel);
+          const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+          loader.parse(bytes.buffer, "", installCybertruck, onError);
+        } catch (error) {
+          onError(error);
+        }
+      }
+    }
+
     this._vehicleScene = {
       dispose: () => {
         disposed = true;
@@ -613,11 +961,7 @@ class TeslaPulseCard extends HTMLElement {
         canvas.removeEventListener("pointermove", pointerMove);
         canvas.removeEventListener("pointerup", pointerUp);
         canvas.removeEventListener("pointercancel", pointerUp);
-        scene.traverse((object) => {
-          object.geometry?.dispose?.();
-          if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose());
-          else object.material?.dispose?.();
-        });
+        disposeObject(scene);
         renderer.dispose();
       },
     };
@@ -645,38 +989,7 @@ class TeslaPulseCard extends HTMLElement {
     const dockActions = display.showHero
       ? quickActions.filter((action) => !SPATIAL_ACTIONS.has(action))
       : quickActions;
-    const frunkAction = this._entityId("openFrunk") ? "openFrunk" : "frunk";
-    const trunkAction = this._entityId("openTrunk") ? "openTrunk" : "trunk";
-    const spatialControls = [
-      {
-        anchor: "trunk",
-        action: trunkAction,
-        label: "Trunk",
-        ariaLabel: "Open trunk",
-        icon: "car-back",
-      },
-      {
-        anchor: "lock",
-        action: "lock",
-        label: this._isLocked() ? "Unlock" : "Lock",
-        ariaLabel: this._isLocked() ? "Unlock vehicle" : "Lock vehicle",
-        icon: this._isLocked() ? "lock" : "lock-open-variant",
-      },
-      {
-        anchor: "climate",
-        action: "climate",
-        label: "Climate",
-        ariaLabel: "Toggle climate",
-        icon: "fan",
-      },
-      {
-        anchor: "frunk",
-        action: frunkAction,
-        label: "Frunk",
-        ariaLabel: "Open frunk",
-        icon: "car",
-      },
-    ].filter(({ action }) => Boolean(this._entityId(action)));
+    const spatialControls = this._spatialControls();
     const batteryProgress = Math.min(100, Math.max(0, battery ?? 0));
     const chargeLimitProgress = Math.min(100, Math.max(0, chargeLimit ?? 0));
     const imageMarkup = this._vehicleRenderMarkup();
@@ -914,7 +1227,7 @@ class TeslaPulseCard extends HTMLElement {
         .vehicle-hotspot { position: absolute; z-index: 5; display: grid; place-items: center; width: 35px; height: 35px; padding: 0; cursor: pointer; border: 1px solid rgba(169, 239, 255, 0.34); border-radius: 50%; background: rgba(8, 14, 17, 0.76); color: var(--ice); box-shadow: 0 0 0 5px rgba(169, 239, 255, 0.06), 0 8px 20px rgba(0, 0, 0, 0.28); backdrop-filter: blur(10px); transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease; }
         .vehicle-hotspot:hover { border-color: var(--ice); background: rgba(22, 50, 58, 0.9); transform: translateY(-2px); }
         .vehicle-hotspot:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
-        .vehicle-hotspot ha-icon { width: 18px; height: 18px; }
+        .vehicle-hotspot ha-icon { --mdc-icon-size: 18px; width: 18px; height: 18px; color: currentColor; }
         .vehicle-hotspot::after { content: ""; position: absolute; top: 100%; width: 1px; height: 22px; background: linear-gradient(to bottom, rgba(169, 239, 255, 0.62), transparent); }
         .vehicle-hotspot::before { content: attr(data-label); position: absolute; top: calc(100% + 8px); left: 50%; padding: 3px 6px; border: 1px solid var(--tone-line); border-radius: 3px; color: var(--tone-text); background: color-mix(in srgb, var(--tone-bg) 88%, transparent); font-size: 8px; font-weight: 800; text-transform: uppercase; white-space: nowrap; transform: translateX(-50%); }
         .vehicle-hotspot { left: 50%; top: 50%; transform: translate(-50%, -50%); }
@@ -1046,6 +1359,7 @@ class TeslaPulseCard extends HTMLElement {
     `;
     this._bindEvents();
     this._initVehicleScene();
+    this._isRendered = true;
   }
 
   _control(action, icon, label, active) {
@@ -1234,6 +1548,7 @@ class TeslaPulseCardEditor extends HTMLElement {
       entities: { ...DEFAULT_CONFIG.entities, ...(config?.entities || {}) },
       entityMode: config?.entityMode === "manual" ? "manual" : "auto",
       themeMode: ["black", "white"].includes(config?.themeMode) ? config.themeMode : "auto",
+      vehicleColor: VEHICLE_COLORS[config?.vehicleColor] ? config.vehicleColor : DEFAULT_CONFIG.vehicleColor,
       quickActions: Array.isArray(config?.quickActions)
         ? (config.quickActions.length ? config.quickActions : [...DEFAULT_CONFIG.quickActions])
         : [...DEFAULT_CONFIG.quickActions],
@@ -1340,6 +1655,12 @@ class TeslaPulseCardEditor extends HTMLElement {
         .segment span { display: grid; min-height: 38px; place-items: center; padding: 0 10px; cursor: pointer; color: var(--secondary-text-color, #68716c); background: var(--card-background-color, #fff); font-size: 12px; font-weight: 700; }
         .segment input:checked + span { color: var(--text-primary-color, #fff); background: var(--primary-color, #1688a8); }
         .segment input:focus-visible + span { outline: 2px solid var(--primary-color, #1688a8); outline-offset: -2px; }
+        .color-picker { display: flex; flex-wrap: wrap; gap: 10px; }
+        .color-choice { position: relative; }
+        .color-choice input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+        .color-choice span { display: block; width: 30px; height: 30px; cursor: pointer; border: 1px solid var(--divider-color, #c7cfcb); border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.22); }
+        .color-choice input:checked + span { outline: 2px solid var(--primary-color, #1688a8); outline-offset: 3px; }
+        .color-choice input:focus-visible + span { outline: 2px solid var(--primary-color, #1688a8); outline-offset: 3px; }
         @media (max-width: 680px) {
           .grid { grid-template-columns: 1fr; }
           .check-grid { grid-template-columns: 1fr; }
@@ -1351,6 +1672,18 @@ class TeslaPulseCardEditor extends HTMLElement {
           <div class="field full">
             <label for="title">Card title</label>
             <input id="title" type="text" data-key="title" value="${this._escape(this._config.title || "")}" />
+          </div>
+          <div class="field full">
+            <label for="vehicle-model-url">Cybertruck model URL override</label>
+            <input id="vehicle-model-url" type="text" data-key="vehicleModelUrl" value="${this._escape(this._config.vehicleModelUrl || "")}" placeholder="Use bundled Cybertruck model" />
+          </div>
+          <div class="field full">
+            <label>Vehicle color</label>
+            <div class="color-picker" role="radiogroup" aria-label="Cybertruck exterior color">
+              ${Object.entries(VEHICLE_COLORS).map(([key, color]) => `
+                <label class="color-choice"><input type="radio" name="vehicle-color" data-key="vehicleColor" value="${key}" aria-label="${color.label}" ${this._config.vehicleColor === key ? "checked" : ""} /><span style="background: ${color.hex}" title="${color.label}"></span></label>
+              `).join("")}
+            </div>
           </div>
         </div>
 

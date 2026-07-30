@@ -31,3 +31,12 @@ release/
 # Optional local preview assets (images can be large and temporary)
 preview/assets/*
 !preview/assets/.gitkeep
+
+# Licensed local vehicle model override. Never distribute through HACS.
+local-assets/
+
+.tools/
+
+# Source files used to generate the bundled Cybertruck asset.
+Tesla_Cybertruck.fbx
+Tesla_Cybertruck.blend

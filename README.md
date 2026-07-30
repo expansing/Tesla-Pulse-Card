@@ -51,6 +51,7 @@ type: custom:tesla-pulse-card
 title: Juniper
 entityMode: manual
 themeMode: auto
+vehicleColor: red
 confirmations:
   unlock: true
   cargo: true
@@ -70,6 +71,7 @@ quickActions:
   - sentry
   - wake
   - honk
+vehicleModelUrl: /local/my-cybertruck.glb
 display:
   compact: false
   showHero: true
@@ -93,10 +95,16 @@ frunk/trunk, defrost, lights, horn, preconditioning, and fart. Home Assistant
 entities such as charge limit, target temperature, seat heaters, steering-wheel
 heat, and Windows open Home Assistant's native detail control.
 
-The card includes a local, interactive WebGL Model 3-style digital twin with
-drag rotation and spatial frunk, trunk, lock, and climate controls. It does
-not load a vehicle image or external model at runtime. Spatial controls appear
-only when their corresponding Home Assistant entity is configured or detected.
+The card includes an interactive WebGL Cybertruck digital twin with drag
+rotation and spatial frunk, trunk, lock, and climate controls. The included
+user-owned Cybertruck GLB is bundled into the card resource, so it does not
+download vehicle images or models at runtime. `vehicleModelUrl` is optional and
+lets you replace the bundled model with a local Home Assistant URL. Spatial
+controls appear only when their corresponding Home Assistant entity is
+configured or detected.
+
+Set `vehicleColor` to `factory`, `black`, `white`, `red`, `blue`, or `gray`.
+The visual editor provides the same choices as color swatches.
 
 Set `themeMode` to `auto`, `black`, or `white`. Auto follows Home Assistant's
 current light/dark theme and applies the selected appearance to the entire card.

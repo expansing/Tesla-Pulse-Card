@@ -7,6 +7,24 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-07-30
+
+### Added
+
+- Bundle a user-owned interactive Cybertruck GLB with the card resource.
+- Add configurable Cybertruck exterior colors in the visual editor and YAML.
+- Add an optional local model URL override.
+
+### Changed
+
+- Replace the procedural sedan with the Cybertruck model and responsive
+	vehicle-stage camera framing.
+
+### Fixed
+
+- Preserve the WebGL canvas across Home Assistant state updates.
+- Round telemetry values to unit-appropriate precision.
+
 ## [0.1.5] - 2026-07-29
 
 ### Fixed
