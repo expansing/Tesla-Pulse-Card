@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project follows Semantic
 Versioning.
+## [0.1.6] - 2026-07-30
 
 ## [Unreleased]
 
