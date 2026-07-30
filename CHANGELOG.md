@@ -7,6 +7,27 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-07-30
+
+### Added
+
+- Add configurable Cybertruck scale and two-axis drag rotation.
+- Add charge-limit labeling, charge-power telemetry, and native entity-detail
+	actions for telemetry values.
+- Add transient command feedback animations for vehicle and command-dock
+	controls.
+
+### Changed
+
+- Refine the telemetry surface into compact, interactive readouts.
+- Place the TPMS readout beside the 3D vehicle stage.
+
+### Fixed
+
+- Keep the vehicle, TPMS readout, and vehicle-status ribbon in separate stage
+	bands to prevent visual overlap.
+- Prevent telemetry labels and values from colliding in compact layouts.
+
 ## [0.1.7] - 2026-07-30
 
 ### Added

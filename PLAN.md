@@ -40,7 +40,7 @@ tiles:
 - Make telemetry freshness prominent. Tesla Pulse restores cached state and
   intentionally avoids waking a car by default.
 - Require confirmation before high-risk commands: unlock, open frunk or trunk,
-  vent windows, honk, flash lights, and fart.
+  vent windows, honk, and flash lights.
 - Use a responsive single-column mobile layout. On wide dashboards, place the
   energy hero beside the status and control areas.
 

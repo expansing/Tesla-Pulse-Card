@@ -3928,7 +3928,6 @@ const ENTITY_SUFFIXES = {
   defrost: "defrost",
   flashLights: "flash_lights",
   honk: "honk_horn",
-  fart: "fart",
   closeChargePort: "close_charge_port",
   ventWindows: "vent_windows",
   closeWindows: "close_windows",
@@ -3948,6 +3947,8 @@ const DEFAULT_CONFIG = {
   entityMode: "auto",
   themeMode: "auto",
   vehicleColor: "factory",
+  vehicleScale: 1,
+  sensorTapAction: "more-info",
   quickActions: ["sentry", "chargePort", "wake", "honk", "flashLights", "defrost"],
   display: {
     compact: false,
@@ -3984,7 +3985,6 @@ const ACTION_DEFINITIONS = {
   wake: { label: "Wake up", icon: "power" },
   startPreconditioning: { label: "Start preconditioning", icon: "battery-heart-variant" },
   stopPreconditioning: { label: "Stop preconditioning", icon: "battery-off-outline" },
-  fart: { label: "Fart", icon: "weather-windy" },
   targetTemperature: { label: "Target temperature", icon: "thermometer", moreInfo: true },
   frontLeftSeatHeater: { label: "Front left seat", icon: "car-seat-heater", moreInfo: true },
   frontRightSeatHeater: { label: "Front right seat", icon: "car-seat-heater", moreInfo: true },
@@ -4002,6 +4002,14 @@ const VEHICLE_COLORS = {
   red: { label: "Ultra red", hex: "#7b0b19" },
   blue: { label: "Deep blue", hex: "#1e4d86" },
   gray: { label: "Stealth gray", hex: "#52575c" },
+};
+
+const normalizeVehicleScale = (value) => {
+  const scale = Number.parseFloat(value);
+  if (!Number.isFinite(scale)) {
+    return DEFAULT_CONFIG.vehicleScale;
+  }
+  return Math.min(1.2, Math.max(0.75, scale));
 };
 
 class TeslaPulseCard extends HTMLElement {
@@ -4033,6 +4041,8 @@ class TeslaPulseCard extends HTMLElement {
       entities: { ...DEFAULT_CONFIG.entities, ...(config.entities || {}) },
       themeMode: ["black", "white"].includes(config.themeMode) ? config.themeMode : "auto",
       vehicleColor: VEHICLE_COLORS[config.vehicleColor] ? config.vehicleColor : DEFAULT_CONFIG.vehicleColor,
+      vehicleScale: normalizeVehicleScale(config.vehicleScale),
+      sensorTapAction: config.sensorTapAction === "none" ? "none" : "more-info",
       quickActions: this._sanitizeQuickActions(config.quickActions),
       display: {
         ...DEFAULT_CONFIG.display,
@@ -4208,6 +4218,7 @@ class TeslaPulseCard extends HTMLElement {
     const isCharging = chargeState.toLowerCase() === "charging";
     const batteryProgress = Math.min(100, Math.max(0, battery ?? 0));
     const chargeLimitProgress = Math.min(100, Math.max(0, chargeLimit ?? 0));
+    const limitValuePosition = Math.min(94, Math.max(6, chargeLimitProgress));
     const telemetry = this._telemetry();
     const awakeStatus = this._awakeStatus();
 
@@ -4279,7 +4290,7 @@ class TeslaPulseCard extends HTMLElement {
 
     const energyRail = root.querySelector(".energy-rail");
     if (energyRail) {
-      energyRail.setAttribute("aria-label", `Battery level ${batteryProgress} percent`);
+      energyRail.setAttribute("aria-label", `Battery level ${batteryProgress} percent, charge limit ${chargeLimit ?? "unknown"} percent`);
       const energyFill = energyRail.querySelector(".energy-fill");
       if (energyFill) {
         energyFill.style.width = `${batteryProgress}%`;
@@ -4292,6 +4303,12 @@ class TeslaPulseCard extends HTMLElement {
       const energyCaption = energyRail.querySelector(".energy-caption");
       if (energyCaption) {
         energyCaption.textContent = isCharging ? "Energy flowing" : "High-voltage reserve";
+      }
+      const energyValue = energyRail.querySelector(".energy-value");
+      if (energyValue) {
+        energyValue.hidden = chargeLimit === undefined;
+        energyValue.textContent = chargeLimit === undefined ? "" : `${Math.round(chargeLimit)}%`;
+        energyValue.style.left = `${limitValuePosition}%`;
       }
       const energyLimit = energyRail.querySelector(".energy-limit");
       if (energyLimit) {
@@ -4311,30 +4328,13 @@ class TeslaPulseCard extends HTMLElement {
       }
     }
 
-    const systemValues = [
-      this._value("insideTemperature", "Not received"),
-      this._value("outsideTemperature", "Not received"),
-      this._value("odometer", "Not received"),
-      this._value("energyRemaining", "Not received"),
-      this._value("packVoltage", "Not received"),
-      this._value("packCurrent", "Not received"),
-      this._value("batteryHeater", "Not received"),
-      this._value("batteryBalance", "Not received"),
-      this._formattedVoltageImbalance(),
-      this._value("chargeCurrent", "Not received"),
-      this._value("chargerVoltage", "Not received"),
-      this._value("chargeEnergyAdded", "Not received"),
-      this._value("chargingCableType", "Not received"),
-      this._value("chargePortLatch", "Not received"),
-      this._value("frontLeftTirePressure", "Not received"),
-      this._value("frontRightTirePressure", "Not received"),
-      this._value("rearLeftTirePressure", "Not received"),
-      this._value("rearRightTirePressure", "Not received"),
-    ];
-    [...root.querySelectorAll(".systems .system-row strong")].forEach((node, index) => {
-      if (index < systemValues.length) {
-        node.textContent = systemValues[index];
-      }
+    root.querySelectorAll("[data-sensor-key]").forEach((node) => {
+      const key = node.dataset.sensorKey;
+      const value = key === "voltageImbalance"
+        ? this._formattedVoltageImbalance()
+        : this._value(key, "Not received");
+      const valueNode = node.querySelector("strong");
+      if (valueNode) valueNode.textContent = value;
     });
 
     const lockHotspot = root.querySelector('.vehicle-hotspot[data-vehicle-anchor="lock"]');
@@ -4401,7 +4401,24 @@ class TeslaPulseCard extends HTMLElement {
     const value = key === "voltageImbalance"
       ? this._formattedVoltageImbalance()
       : this._value(key, fallback);
-    return `<div class="system-row"><span>${label}</span><strong>${this._escape(value)}</strong></div>`;
+    const entityId = this._entityId(key);
+    const interactive = entityId && this._config.sensorTapAction === "more-info";
+    const tag = interactive ? "button" : "div";
+    const attributes = interactive
+      ? `type="button" data-sensor-entity="${this._escape(entityId)}" aria-label="Open ${this._escape(label)} history"`
+      : "";
+    return `<${tag} class="system-row" data-sensor-key="${key}" ${attributes}><span>${label}</span><strong>${this._escape(value)}</strong><i aria-hidden="true"></i></${tag}>`;
+  }
+
+  _tireLine() {
+    const tires = [["FL", "frontLeftTirePressure"], ["FR", "frontRightTirePressure"], ["RL", "rearLeftTirePressure"], ["RR", "rearRightTirePressure"]];
+    return `<div class="tire-line" aria-label="Tire pressure">${tires.map(([label, key]) => {
+      const entityId = this._entityId(key);
+      const interactive = entityId && this._config.sensorTapAction === "more-info";
+      const tag = interactive ? "button" : "span";
+      const attributes = interactive ? `type="button" data-sensor-entity="${this._escape(entityId)}" aria-label="Open ${label} tire pressure history"` : "";
+      return `<${tag} data-sensor-key="${key}" ${attributes}><b>${label}</b><strong>${this._escape(this._value(key, "--"))}</strong></${tag}>`;
+    }).join("")}</div>`;
   }
 
   _statusTone(active, alert = false) {
@@ -4736,7 +4753,7 @@ class TeslaPulseCard extends HTMLElement {
       cybertruck.rotation.y = Math.PI / 2;
       let bounds = new THREE.Box3().setFromObject(cybertruck);
       const size = bounds.getSize(new THREE.Vector3());
-      const scale = 5.1 / Math.max(size.x, size.z);
+      const scale = (5.1 * this._config.vehicleScale) / Math.max(size.x, size.z);
       cybertruck.scale.multiplyScalar(scale);
       bounds = new THREE.Box3().setFromObject(cybertruck);
       const center = bounds.getCenter(new THREE.Vector3());
@@ -4756,8 +4773,11 @@ class TeslaPulseCard extends HTMLElement {
     let frameId;
     let yaw = 0;
     let targetYaw = yaw;
+    let pitch = 0;
+    let targetPitch = pitch;
     let dragging = false;
     let previousX = 0;
+    let previousY = 0;
 
     const resize = () => {
       const width = Math.max(1, canvas.clientWidth);
@@ -4788,7 +4808,9 @@ class TeslaPulseCard extends HTMLElement {
     const animate = (time) => {
       if (disposed) return;
       yaw += (targetYaw - yaw) * 0.08;
+      pitch += (targetPitch - pitch) * 0.08;
       vehicle.rotation.y = yaw + (dragging ? 0 : Math.sin(time * 0.00022) * 0.008);
+      vehicle.rotation.x = pitch;
       updateHotspots();
       renderer.render(scene, camera);
       frameId = requestAnimationFrame(animate);
@@ -4796,12 +4818,15 @@ class TeslaPulseCard extends HTMLElement {
     const pointerDown = (event) => {
       dragging = true;
       previousX = event.clientX;
+      previousY = event.clientY;
       canvas.setPointerCapture?.(event.pointerId);
     };
     const pointerMove = (event) => {
       if (!dragging) return;
       targetYaw += (event.clientX - previousX) * 0.012;
+      targetPitch = THREE.MathUtils.clamp(targetPitch + (event.clientY - previousY) * 0.006, -0.32, 0.24);
       previousX = event.clientX;
+      previousY = event.clientY;
     };
     const pointerUp = (event) => {
       dragging = false;
@@ -4878,6 +4903,7 @@ class TeslaPulseCard extends HTMLElement {
     const spatialControls = this._spatialControls();
     const batteryProgress = Math.min(100, Math.max(0, battery ?? 0));
     const chargeLimitProgress = Math.min(100, Math.max(0, chargeLimit ?? 0));
+    const limitValuePosition = Math.min(94, Math.max(6, chargeLimitProgress));
     const imageMarkup = this._vehicleRenderMarkup();
 
     this.shadowRoot.innerHTML = `
@@ -5095,21 +5121,22 @@ class TeslaPulseCard extends HTMLElement {
         .cockpit .telemetry.live .telemetry-label { color: var(--lime); }
         .cockpit .awake-state { border-color: var(--tone-line); background: color-mix(in srgb, var(--tone-raised) 82%, transparent); color: var(--tone-muted); }
         .cockpit .awake-state.is-awake { border-color: rgba(98, 230, 167, 0.36); background: rgba(98, 230, 167, 0.09); color: var(--lime); }
-        .vehicle-stage { position: relative; z-index: 1; min-height: 445px; }
+        .vehicle-stage { position: relative; z-index: 1; min-height: 560px; }
         .vehicle-render {
           position: absolute;
           z-index: 2;
           left: 50%;
-          top: 82px;
+          top: 46px;
           width: min(98%, 730px);
           transform: translateX(-50%);
           animation: vehicle-arrive 720ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
         }
         .vehicle-canvas, .vehicle-vector { display: block; width: 100%; height: 300px; object-fit: contain; filter: drop-shadow(0 24px 28px rgba(0, 0, 0, 0.44)); }
-        .vehicle-canvas { cursor: grab; touch-action: pan-y; }
+        .vehicle-canvas { cursor: grab; touch-action: none; }
         .vehicle-canvas:active { cursor: grabbing; }
         .vehicle-canvas.is-ready + .vehicle-render-fallback { display: none; }
         .vehicle-render-fallback { position: absolute; inset: 0; }
+        .tire-nearby { position: absolute; z-index: 4; left: 50%; bottom: 170px; width: min(316px, calc(100% - 48px)); transform: translateX(-50%); }
         .vehicle-hotspot { position: absolute; z-index: 5; display: grid; place-items: center; width: 35px; height: 35px; padding: 0; cursor: pointer; border: 1px solid rgba(169, 239, 255, 0.34); border-radius: 50%; background: rgba(8, 14, 17, 0.76); color: var(--ice); box-shadow: 0 0 0 5px rgba(169, 239, 255, 0.06), 0 8px 20px rgba(0, 0, 0, 0.28); backdrop-filter: blur(10px); transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease; }
         .vehicle-hotspot:hover { border-color: var(--ice); background: rgba(22, 50, 58, 0.9); transform: translateY(-2px); }
         .vehicle-hotspot:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
@@ -5147,29 +5174,55 @@ class TeslaPulseCard extends HTMLElement {
         .energy-fill { position: relative; height: 100%; width: ${batteryProgress}%; min-width: ${battery === undefined ? 0 : 6}px; background: ${isCharging ? "var(--lime)" : "var(--ice)"}; box-shadow: 0 0 18px ${isCharging ? "rgba(98, 230, 167, 0.62)" : "rgba(169, 239, 255, 0.5)"}; }
         .energy-fill::after { content: ""; position: absolute; inset: -3px 0 -3px auto; width: 2px; background: #fff; }
         .energy-limit { position: absolute; top: -5px; left: calc(${chargeLimitProgress}% - 1px); width: 2px; height: 16px; background: var(--ember); }
+        .energy-value { position: absolute; bottom: 11px; z-index: 1; min-width: 34px; color: var(--ember); font-size: 12px; font-weight: 800; letter-spacing: 0; text-align: center; transform: translateX(-50%); }
+        .energy-value[hidden] { display: none; }
         .energy-caption { position: absolute; right: 0; bottom: 10px; color: var(--tone-muted); font-size: 10px; }
         .charging-readout { position: relative; z-index: 2; padding: 13px 24px 15px; border-top: 1px solid var(--tone-line); background: var(--tone-bg); color: var(--tone-text); }
         .charging-readout .status-label { color: var(--lime); }
         .charging-readout .charging-values { color: var(--tone-text); }
-        .command-deck { padding: 20px 24px 22px; border-top: 1px solid var(--tone-line); background: var(--tone-bg); color: var(--tone-text); }
-        .command-deck .section-heading { margin-bottom: 13px; }
+        .command-deck { padding: 22px 24px 24px; border-top: 1px solid var(--tone-line); background: var(--tone-raised); color: var(--tone-text); }
+        .command-deck .section-heading { margin-bottom: 14px; }
         .command-deck h2 { color: var(--tone-text); }
         .command-deck .status-label { color: var(--tone-muted); }
-        .command-deck .controls { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-        .command-deck .control { min-height: 68px; border-color: var(--tone-line); background: var(--tone-raised); color: var(--tone-text); }
-        .command-deck .control:hover { border-color: rgba(169, 239, 255, 0.48); background: rgba(169, 239, 255, 0.08); }
-        .command-deck .control ha-icon { color: var(--ice); }
-        .telemetry-surface, .systems, .system-group { background: var(--tone-bg); color: var(--tone-text); }
-        .systems { border-top: 0; padding: 22px 24px 24px; }
-        .systems .section-heading { margin-bottom: 15px; }
-        .systems .section-heading h2 { font-size: 17px; }
-        .systems-grid { border-color: var(--line); }
-        .system-title { background: transparent; color: var(--electric); }
-        .system-row { border-color: var(--tone-line); color: var(--tone-muted); }
-        .system-row strong { color: var(--tone-text); }
-        .systems-grid, .system-group, .system-title { border-color: var(--tone-line); }
-        .systems .section-heading h2 { color: var(--tone-text); }
+        .command-deck .controls { grid-template-columns: repeat(auto-fit, minmax(94px, 1fr)); gap: 10px; }
+        .command-deck .control { display: grid; grid-template-rows: 25px minmax(28px, auto); place-items: center; min-height: 82px; padding: 11px 7px 9px; border-color: var(--tone-line); background: color-mix(in srgb, var(--tone-bg) 62%, transparent); color: var(--tone-text); }
+        .command-deck .control:hover { border-color: rgba(169, 239, 255, 0.62); background: rgba(169, 239, 255, 0.1); }
+        .command-deck .control ha-icon { width: 22px; height: 22px; margin: 0; color: var(--ice); }
+        .command-deck .control-label { overflow: visible; color: var(--tone-text); font-size: 11px; line-height: 1.2; text-overflow: clip; white-space: normal; }
+        .telemetry-surface, .systems { background: var(--tone-bg); color: var(--tone-text); }
+        .systems { border-top: 0; padding: 24px; }
+        .systems .section-heading { margin-bottom: 16px; }
+        .systems .section-heading h2 { color: var(--tone-text); font-size: 17px; }
         .systems .status-label { color: var(--tone-muted); }
+        .systems-grid { gap: 14px; border: 0; background: transparent; }
+        .system-group { position: relative; display: grid; grid-template-columns: 1fr; gap: 0; min-width: 0; padding: 0; border: 0; border-top: 2px solid var(--system-accent, var(--ice)); border-radius: 0; background: transparent; color: var(--tone-text); }
+        .system-group::before { display: none; }
+        .system-environment { --system-accent: #62e6a7; }
+        .system-high-voltage { --system-accent: #ffb85c; }
+        .system-charging { --system-accent: #a9efff; }
+        .system-tires { --system-accent: #bba7ff; }
+        .system-title { display: flex; align-items: center; gap: 8px; min-height: 34px; margin: 0; padding: 0 4px; border: 0; background: transparent; color: var(--system-accent); font-size: 10px; }
+        .system-title ha-icon { width: 17px; height: 17px; color: currentColor; }
+        .system-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); grid-template-rows: 1fr 2px; column-gap: 12px; align-items: center; min-height: 46px; padding: 7px 4px; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--system-accent) 18%, var(--tone-line)); border-radius: 0; background: transparent; color: var(--tone-muted); text-align: left; }
+        button.system-row { cursor: pointer; font: inherit; }
+        button.system-row:hover { background: color-mix(in srgb, var(--system-accent) 8%, transparent); }
+        button.system-row:focus-visible { outline: 2px solid var(--system-accent); outline-offset: 2px; }
+        .system-row span { min-width: 0; overflow: hidden; font-size: 10px; font-weight: 800; letter-spacing: 0; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+        .system-row strong { max-width: 128px; overflow: hidden; color: var(--tone-text); font-size: 14px; line-height: 1; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+        .system-row i { grid-column: 1 / -1; display: block; height: 2px; opacity: 0.68; background: linear-gradient(90deg, var(--system-accent), transparent 66%); }
+        .tire-line { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--system-accent) 22%, var(--tone-line)); border-radius: 6px; background: color-mix(in srgb, var(--system-accent) 12%, transparent); }
+        .tire-line span, .tire-line button { min-width: 0; padding: 10px 7px; border: 0; background: color-mix(in srgb, var(--tone-bg) 74%, transparent); color: inherit; font: inherit; text-align: center; }
+        .tire-line button { cursor: pointer; }
+        .tire-line button:hover { background: color-mix(in srgb, var(--system-accent) 13%, var(--tone-bg)); }
+        .tire-line button:focus-visible { outline: 2px solid var(--system-accent); outline-offset: -2px; }
+        .tire-line b { display: block; color: var(--system-accent); font-size: 9px; }
+        .tire-line strong { display: block; margin-top: 4px; overflow: hidden; color: var(--tone-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+        .control.is-commanding { animation: command-pulse 720ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+        .control.is-commanding ha-icon { animation: command-icon 720ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+        .vehicle-hotspot.is-commanding { animation: hotspot-command 720ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+        @keyframes command-pulse { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(169, 239, 255, 0.56); } 32% { transform: scale(0.94); box-shadow: 0 0 0 10px rgba(169, 239, 255, 0.1); } 100% { transform: scale(1); box-shadow: 0 0 0 16px rgba(169, 239, 255, 0); } }
+        @keyframes command-icon { 35% { transform: rotate(-18deg) scale(1.2); color: var(--lime); } 100% { transform: rotate(0) scale(1); } }
+        @keyframes hotspot-command { 0% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 0 5px rgba(169, 239, 255, 0.06); } 32% { transform: translate(-50%, -50%) scale(0.86); box-shadow: 0 0 0 14px rgba(169, 239, 255, 0.14); } 100% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 0 5px rgba(169, 239, 255, 0.06); } }
         .card.theme-white .vehicle-hotspot { border-color: rgba(22, 136, 168, 0.3); background: rgba(255, 255, 255, 0.86); color: #116f89; box-shadow: 0 0 0 5px rgba(22, 136, 168, 0.06), 0 8px 20px rgba(21, 37, 42, 0.16); }
         .card.theme-white .stage-state.is-active strong { color: #087a52; }
         .card.theme-white .charging-readout .status-label { color: #087a52; }
@@ -5181,8 +5234,9 @@ class TeslaPulseCard extends HTMLElement {
           .cockpit { min-height: 548px; }
           .cockpit .topline { padding: 17px 16px 0; }
           .cockpit h1 { font-size: 21px; }
-          .vehicle-stage { min-height: 486px; }
-          .vehicle-render { top: 110px; width: 100%; }
+          .vehicle-stage { min-height: 600px; }
+          .vehicle-render { top: 60px; width: 100%; }
+          .tire-nearby { bottom: 178px; width: calc(100% - 32px); }
           .metric-orbit { top: 53px; min-width: 100px; }
           .metric-orbit.battery-orbit { left: 16px; }
           .metric-orbit.range-orbit { right: 16px; }
@@ -5192,7 +5246,8 @@ class TeslaPulseCard extends HTMLElement {
           .stage-state:nth-child(-n+2) { border-bottom: 1px solid rgba(169, 239, 255, 0.12); }
           .energy-rail { left: 16px; right: 16px; bottom: 22px; }
           .charging-readout, .command-deck, .systems { padding-left: 16px; padding-right: 16px; }
-          .command-deck .controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+          .command-deck .controls { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+          .command-deck .control { min-height: 86px; }
           .systems-grid { grid-template-columns: 1fr; }
         }
       </style>
@@ -5209,6 +5264,7 @@ class TeslaPulseCard extends HTMLElement {
             <div class="metric-orbit battery-orbit"><span class="orbit-label">State of charge</span><strong class="orbit-value">${battery === undefined ? "--" : Math.round(battery)}<small>%</small></strong><em class="orbit-detail">${this._escape(chargeState)}</em></div>
             <div class="metric-orbit range-orbit"><span class="orbit-label">Projected range</span><strong class="orbit-value">${range === undefined ? "--" : Math.round(range)}<small>${range === undefined ? "" : "km"}</small></strong><em class="orbit-detail">${chargeLimit === undefined ? "No limit" : `Limit ${Math.round(chargeLimit)}%`}</em></div>
             <div class="vehicle-render">${imageMarkup}</div>
+            <div class="tire-nearby">${this._tireLine()}</div>
             ${spatialControls.map((control) => `<button class="vehicle-hotspot hotspot-${control.anchor}" type="button" data-label="${control.label}" data-vehicle-anchor="${control.anchor}" data-action="${control.action}" aria-label="${control.ariaLabel}" title="${control.ariaLabel}"><ha-icon icon="mdi:${control.icon}"></ha-icon></button>`).join("")}
             <div class="stage-ribbon" ${display.showStatus ? "" : "hidden"}>
               <div class="stage-state ${this._statusTone(this._isOn("climate"))}"><span>Cabin</span><strong>${this._isOn("climate") ? "Climate active" : this._value("insideTemperature", "Climate off")}</strong></div>
@@ -5216,7 +5272,7 @@ class TeslaPulseCard extends HTMLElement {
               <div class="stage-state ${this._statusTone(this._isOn("sentry"))}"><span>Guardian</span><strong>${this._isOn("sentry") ? "Sentry armed" : "Sentry off"}</strong></div>
               <div class="stage-state ${this._statusTone(this._isOn("windows"), this._isOn("windows"))}"><span>Windows</span><strong>${this._isOn("windows") ? "Open" : "Closed"}</strong></div>
             </div>
-            <div class="energy-rail" aria-label="Battery level ${batteryProgress} percent"><div class="energy-fill"></div>${chargeLimit === undefined ? "" : `<span class="energy-limit" title="Charge limit ${Math.round(chargeLimit)} percent"></span>`}<span class="energy-caption">${isCharging ? "Energy flowing" : "High-voltage reserve"}</span></div>
+            <div class="energy-rail" aria-label="Battery level ${batteryProgress} percent, charge limit ${chargeLimit ?? "unknown"} percent"><div class="energy-fill"></div><span class="energy-value" style="left: ${limitValuePosition}%" ${chargeLimit === undefined ? "hidden" : ""}>${chargeLimit === undefined ? "" : `${Math.round(chargeLimit)}%`}</span>${chargeLimit === undefined ? "" : `<span class="energy-limit" title="Charge limit ${Math.round(chargeLimit)} percent"></span>`}<span class="energy-caption">${isCharging ? "Energy flowing" : "High-voltage reserve"}</span></div>
           </div>
         </section>
         <section class="charging-readout" ${(isCharging && display.showCharging) ? "" : "hidden"} aria-label="Charging details">
@@ -5233,10 +5289,9 @@ class TeslaPulseCard extends HTMLElement {
           <section class="systems" aria-label="Vehicle systems" ${display.showHealth ? "" : "hidden"}>
             <div class="section-heading"><h2>Telemetry lattice</h2><span class="status-label">Useful systems / live</span></div>
             <div class="systems-grid">
-              <div class="system-group"><h3 class="system-title">Environment</h3>${this._systemRow("Cabin", "insideTemperature")}${this._systemRow("Outside", "outsideTemperature")}${this._systemRow("Odometer", "odometer")}${this._systemRow("Energy remaining", "energyRemaining")}</div>
-              <div class="system-group"><h3 class="system-title">High voltage</h3>${this._systemRow("Pack voltage", "packVoltage")}${this._systemRow("Pack current", "packCurrent")}${this._systemRow("Battery heater", "batteryHeater")}${this._systemRow("Balance", "batteryBalance")}${this._systemRow("Brick delta", "voltageImbalance")}</div>
-              <div class="system-group"><h3 class="system-title">Charging interface</h3>${this._systemRow("Charge current", "chargeCurrent")}${this._systemRow("Charger voltage", "chargerVoltage")}${this._systemRow("Energy added", "chargeEnergyAdded")}${this._systemRow("Cable", "chargingCableType")}${this._systemRow("Port latch", "chargePortLatch")}</div>
-              <div class="system-group"><h3 class="system-title">Tire pressure</h3>${this._systemRow("Front left", "frontLeftTirePressure")}${this._systemRow("Front right", "frontRightTirePressure")}${this._systemRow("Rear left", "rearLeftTirePressure")}${this._systemRow("Rear right", "rearRightTirePressure")}</div>
+              <div class="system-group system-environment"><h3 class="system-title"><ha-icon icon="mdi:home-thermometer-outline"></ha-icon>Environment</h3>${this._systemRow("Cabin", "insideTemperature")}${this._systemRow("Outside", "outsideTemperature")}${this._systemRow("Odometer", "odometer")}${this._systemRow("Energy remaining", "energyRemaining")}</div>
+              <div class="system-group system-high-voltage"><h3 class="system-title"><ha-icon icon="mdi:flash"></ha-icon>High voltage</h3>${this._systemRow("Pack voltage", "packVoltage")}${this._systemRow("Pack current", "packCurrent")}${this._systemRow("Battery heater", "batteryHeater")}${this._systemRow("Balance", "batteryBalance")}${this._systemRow("Brick delta", "voltageImbalance")}</div>
+              <div class="system-group system-charging"><h3 class="system-title"><ha-icon icon="mdi:ev-station"></ha-icon>Charging interface</h3>${this._systemRow("Charge power", "chargePower")}${this._systemRow("Charge current", "chargeCurrent")}${this._systemRow("Charger voltage", "chargerVoltage")}${this._systemRow("Energy added", "chargeEnergyAdded")}${this._systemRow("Cable", "chargingCableType")}${this._systemRow("Port latch", "chargePortLatch")}</div>
             </div>
           </section>
         </div>
@@ -5258,7 +5313,19 @@ class TeslaPulseCard extends HTMLElement {
 
   _bindEvents() {
     this.shadowRoot.querySelectorAll("[data-action]").forEach((button) => {
-      button.addEventListener("click", () => this._handleAction(button.dataset.action));
+      button.addEventListener("click", () => {
+        this._animateAction(button);
+        this._handleAction(button.dataset.action);
+      });
+    });
+    this.shadowRoot.querySelectorAll("[data-sensor-entity]").forEach((sensor) => {
+      sensor.addEventListener("click", () => {
+        this.dispatchEvent(new CustomEvent("hass-more-info", {
+          detail: { entityId: sensor.dataset.sensorEntity },
+          bubbles: true,
+          composed: true,
+        }));
+      });
     });
     this.shadowRoot.querySelectorAll("[data-dialog-action]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -5290,6 +5357,15 @@ class TeslaPulseCard extends HTMLElement {
       return;
     }
     this._executeAction(action);
+  }
+
+  _animateAction(button) {
+    button.classList.remove("is-commanding");
+    void button.offsetWidth;
+    button.classList.add("is-commanding");
+    const clearAnimation = () => button.classList.remove("is-commanding");
+    button.addEventListener("animationend", clearAnimation, { once: true });
+    window.setTimeout(clearAnimation, 800);
   }
 
   _executeAction(action) {
@@ -5414,7 +5490,6 @@ const EDITOR_COMMAND_FIELDS = [
   ["rearLeftSeatHeater", "Rear left seat heater control"],
   ["rearRightSeatHeater", "Rear right seat heater control"],
   ["steeringWheelHeater", "Steering wheel heater control"],
-  ["fart", "Fart command"],
 ];
 
 const EDITOR_DISPLAY_FIELDS = [
@@ -5435,6 +5510,8 @@ class TeslaPulseCardEditor extends HTMLElement {
       entityMode: config?.entityMode === "manual" ? "manual" : "auto",
       themeMode: ["black", "white"].includes(config?.themeMode) ? config.themeMode : "auto",
       vehicleColor: VEHICLE_COLORS[config?.vehicleColor] ? config.vehicleColor : DEFAULT_CONFIG.vehicleColor,
+      vehicleScale: normalizeVehicleScale(config?.vehicleScale),
+      sensorTapAction: config?.sensorTapAction === "none" ? "none" : "more-info",
       quickActions: Array.isArray(config?.quickActions)
         ? (config.quickActions.length ? config.quickActions : [...DEFAULT_CONFIG.quickActions])
         : [...DEFAULT_CONFIG.quickActions],
@@ -5547,6 +5624,9 @@ class TeslaPulseCardEditor extends HTMLElement {
         .color-choice span { display: block; width: 30px; height: 30px; cursor: pointer; border: 1px solid var(--divider-color, #c7cfcb); border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.22); }
         .color-choice input:checked + span { outline: 2px solid var(--primary-color, #1688a8); outline-offset: 3px; }
         .color-choice input:focus-visible + span { outline: 2px solid var(--primary-color, #1688a8); outline-offset: 3px; }
+        .scale-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+        .scale-control input[type="range"] { width: 100%; accent-color: var(--primary-color, #1688a8); }
+        .scale-control output { min-width: 42px; color: var(--primary-text-color, #1f2522); font-size: 12px; font-weight: 800; text-align: right; }
         @media (max-width: 680px) {
           .grid { grid-template-columns: 1fr; }
           .check-grid { grid-template-columns: 1fr; }
@@ -5571,6 +5651,10 @@ class TeslaPulseCardEditor extends HTMLElement {
               `).join("")}
             </div>
           </div>
+          <div class="field full">
+            <label for="vehicle-scale">Vehicle scale</label>
+            <div class="scale-control"><input id="vehicle-scale" type="range" min="0.75" max="1.2" step="0.05" data-key="vehicleScale" value="${this._config.vehicleScale}" aria-label="Vehicle scale" /><output for="vehicle-scale">${Math.round(this._config.vehicleScale * 100)}%</output></div>
+          </div>
         </div>
 
         <div class="field full">
@@ -5578,6 +5662,15 @@ class TeslaPulseCardEditor extends HTMLElement {
           <div class="segmented" role="radiogroup" aria-label="Card appearance">
             ${[["auto", "Auto"], ["black", "Black"], ["white", "White"]].map(([value, label]) => `
               <label class="segment"><input type="radio" name="theme-mode" data-theme-mode value="${value}" ${this._config.themeMode === value ? "checked" : ""} /><span>${label}</span></label>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="field full">
+          <label>Sensor tap</label>
+          <div class="segmented" role="radiogroup" aria-label="Sensor tap behavior">
+            ${[["more-info", "Open detail"], ["none", "No action"]].map(([value, label]) => `
+              <label class="segment"><input type="radio" name="sensor-tap-action" data-sensor-tap-action value="${value}" ${this._config.sensorTapAction === value ? "checked" : ""} /><span>${label}</span></label>
             `).join("")}
           </div>
         </div>
@@ -5653,6 +5746,15 @@ class TeslaPulseCardEditor extends HTMLElement {
       });
     });
 
+    this.shadowRoot.querySelectorAll('input[data-key="vehicleScale"]').forEach((input) => {
+      input.addEventListener("input", (event) => {
+        const output = event.target.parentElement?.querySelector("output");
+        if (output) {
+          output.textContent = `${Math.round(Number(event.target.value) * 100)}%`;
+        }
+      });
+    });
+
     this.shadowRoot.querySelectorAll("select[data-key]").forEach((select) => {
       select.addEventListener("change", (event) => {
         this._updateConfig(event.target.dataset.key, event.target.value);
@@ -5663,6 +5765,14 @@ class TeslaPulseCardEditor extends HTMLElement {
       input.addEventListener("change", (event) => {
         if (event.target.checked) {
           this._updateConfig("themeMode", event.target.value);
+        }
+      });
+    });
+
+    this.shadowRoot.querySelectorAll("input[data-sensor-tap-action]").forEach((input) => {
+      input.addEventListener("change", (event) => {
+        if (event.target.checked) {
+          this._updateConfig("sensorTapAction", event.target.value);
         }
       });
     });

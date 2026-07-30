@@ -52,6 +52,8 @@ title: Juniper
 entityMode: manual
 themeMode: auto
 vehicleColor: red
+vehicleScale: 1.1
+sensorTapAction: more-info
 confirmations:
   unlock: true
   cargo: true
@@ -90,7 +92,7 @@ The systems matrix focuses on useful at-a-glance data: odometer, remaining
 energy, battery heater, pack voltage/current, charging input, cable/latch
 state, and all four tire pressures. The editor also supports selectable command
 entities for wake, lock, climate, sentry, charge-port and window operations,
-frunk/trunk, defrost, lights, horn, preconditioning, and fart. Home Assistant
+frunk/trunk, defrost, lights, horn, and preconditioning. Home Assistant
 `button` entities are invoked with `button.press` automatically. Adjustable
 entities such as charge limit, target temperature, seat heaters, steering-wheel
 heat, and Windows open Home Assistant's native detail control.
@@ -106,8 +108,15 @@ configured or detected.
 Set `vehicleColor` to `factory`, `black`, `white`, `red`, `blue`, or `gray`.
 The visual editor provides the same choices as color swatches.
 
+Set `vehicleScale` between `0.75` and `1.2` to resize the Cybertruck. The
+spatial vehicle controls are recalculated for the selected size.
+
 Set `themeMode` to `auto`, `black`, or `white`. Auto follows Home Assistant's
 current light/dark theme and applies the selected appearance to the entire card.
+
+Set `sensorTapAction` to `more-info` (default) to open Home Assistant's native
+entity detail and history graph for telemetry readouts, or `none` to disable
+sensor taps.
 
 ## HACS Release Flow
 
