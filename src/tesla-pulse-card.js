@@ -111,13 +111,27 @@ const ACTION_DEFINITIONS = {
 
 const SPATIAL_ACTIONS = new Set(["lock", "climate", "frunk", "openFrunk", "trunk", "openTrunk"]);
 
+const PAINT_FINISHES = {
+  gloss: { metalness: 0.72, roughness: 0.19, clearcoat: 0.7, clearcoatRoughness: 0.11 },
+  matte: { metalness: 0.18, roughness: 0.78, clearcoat: 0.04, clearcoatRoughness: 0.65 },
+};
+
 const VEHICLE_COLORS = {
-  factory: { label: "Model 3 yellow", hex: "#f4c71b" },
-  black: { label: "Solid black", hex: "#161719" },
-  white: { label: "Pearl white", hex: "#f5f6f4" },
-  red: { label: "Ultra red", hex: "#7b0b19" },
-  blue: { label: "Deep blue", hex: "#1e4d86" },
-  gray: { label: "Stealth gray", hex: "#52575c" },
+  factory: { label: "Factory finish", hex: "#f4c71b", finish: "gloss" },
+  black: { label: "Gloss black", hex: "#161719", finish: "gloss" },
+  white: { label: "Pearl white", hex: "#f5f6f4", finish: "gloss" },
+  red: { label: "Ultra red", hex: "#7b0b19", finish: "gloss" },
+  blue: { label: "Deep blue", hex: "#1e4d86", finish: "gloss" },
+  gray: { label: "Stealth gray", hex: "#52575c", finish: "gloss" },
+  silver: { label: "Quicksilver", hex: "#b8bdc2", finish: "gloss" },
+  green: { label: "Racing green", hex: "#123b28", finish: "gloss" },
+  orange: { label: "Ember orange", hex: "#c8451b", finish: "gloss" },
+  matteBlack: { label: "Matte black", hex: "#1b1c1e", finish: "matte" },
+  matteWhite: { label: "Matte white", hex: "#e7e8e4", finish: "matte" },
+  matteGray: { label: "Matte gray", hex: "#484b4f", finish: "matte" },
+  matteBlue: { label: "Matte blue", hex: "#26313f", finish: "matte" },
+  matteGreen: { label: "Matte green", hex: "#37402f", finish: "matte" },
+  matteRed: { label: "Matte red", hex: "#5e1414", finish: "matte" },
 };
 
 const CUSTOM_SENSOR_ACCENTS = {
@@ -1002,10 +1016,10 @@ class TeslaPulseCard extends HTMLElement {
     let activeModel;
     const paintNameInclude = /(body|paint|door|bonnet|bumper|hood|fender|boot|rear|front|putih|satin|panel)/;
     // "rim" is boundary-guarded (^|[^a-z]) so it matches the wheel token but not the substring inside "primary".
-    const paintNameExclude = /(glass|window|light|lamp|head|fog|indicator|tail|hub|wheel|tire|(^|[^a-z])rim|rubber|mirror|interior|seat|carpet|lcd|chrome|aluminium|plastic|trim|chassis)/;
-    const lightSurface = /(light|lamp|head|fog|indicator|tail|brake|signal|turn|reverse)/;
+    const paintNameExclude = /(glass|window|light|lamp|head|fog|indicator|tail|tembus|pantulan|platnomor|suspensi|hub|wheel|tire|(^|[^a-z])rim|rubber|mirror|interior|seat|carpet|lcd|chrome|aluminium|plastic|trim|chassis)/;
+    const lightSurface = /(light|lamp|head|fog|indicator|tail|brake|signal|turn|reverse|tembus|pantulan)/;
     const frameSurface = /(pillar|frame|trim|window_trim|door_frame|black|just_black|hitam|sills|bodysills)/;
-    const interiorSurface = /(interior|seat|leather|carpet|dashboard|lcd|steer|panel|belt|console|plastic|inside)/;
+    const interiorSurface = /(interior|seat|leather|carpet|dashboard|lcd|steer|panel|belt|console|button|plastic|inside)/;
     const rimSurface = /((^|[^a-z])rim|hub|caliper|disc|wheel_face|wheelcap)/;
 
     const applyModelAppearance = (model) => {
@@ -1064,21 +1078,12 @@ class TeslaPulseCard extends HTMLElement {
               material.map = null;
               material.emissiveMap = null;
             }
+            const finish = PAINT_FINISHES[vehicleColor.finish] || PAINT_FINISHES.gloss;
             material.color.set(vehicleColor.hex);
-            material.metalness = 0.72;
-            material.roughness = 0.19;
-            material.clearcoat = 0.7;
-            material.clearcoatRoughness = 0.11;
-          } else if (!/(glass|window|light|lamp|head|fog|indicator|tail|hub|wheel|tire|(^|[^a-z])rim|rubber|mirror|interior|seat|carpet|lcd|chrome|aluminium|plastic|trim|chassis)/.test(`${materialName} ${objectName}`)) {
-            if (applyCustomPaint) {
-              material.map = null;
-              material.emissiveMap = null;
-            }
-            material.color.set(vehicleColor.hex);
-            material.metalness = 0.72;
-            material.roughness = 0.19;
-            material.clearcoat = 0.7;
-            material.clearcoatRoughness = 0.11;
+            material.metalness = finish.metalness;
+            material.roughness = finish.roughness;
+            material.clearcoat = finish.clearcoat;
+            material.clearcoatRoughness = finish.clearcoatRoughness;
           } else if (lightSurface.test(materialName) || lightSurface.test(objectName)) {
             const rearLight = /(tail|rear|brake|red)/.test(`${materialName} ${objectName}`);
             material.transparent = false;
@@ -2024,9 +2029,13 @@ class TeslaPulseCardEditor extends HTMLElement {
         .segment input:checked + span { color: var(--text-primary-color, #fff); background: var(--primary-color, #1688a8); }
         .segment input:focus-visible + span { outline: 2px solid var(--primary-color, #1688a8); outline-offset: -2px; }
         .color-picker { display: flex; flex-wrap: wrap; gap: 10px; }
+        .color-group + .color-group { margin-top: 12px; }
+        .color-group-label { display: block; margin-bottom: 6px; color: var(--secondary-text-color, #68716c); font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
         .color-choice { position: relative; }
         .color-choice input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-        .color-choice span { display: block; width: 30px; height: 30px; cursor: pointer; border: 1px solid var(--divider-color, #c7cfcb); border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.22); }
+        .color-choice span { display: block; width: 30px; height: 30px; cursor: pointer; border: 1px solid var(--divider-color, #c7cfcb); border-radius: 50%; }
+        .color-choice span.swatch-gloss { box-shadow: inset 0 3px 5px rgba(255, 255, 255, 0.4), inset -3px -5px 7px rgba(0, 0, 0, 0.35); }
+        .color-choice span.swatch-matte { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.22); filter: saturate(0.85); }
         .color-choice input:checked + span { outline: 2px solid var(--primary-color, #1688a8); outline-offset: 3px; }
         .color-choice input:focus-visible + span { outline: 2px solid var(--primary-color, #1688a8); outline-offset: 3px; }
         .scale-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
@@ -2055,11 +2064,16 @@ class TeslaPulseCardEditor extends HTMLElement {
           </div>
           <div class="field full">
             <label>Vehicle color</label>
-            <div class="color-picker" role="radiogroup" aria-label="Cybertruck exterior color">
-              ${Object.entries(VEHICLE_COLORS).map(([key, color]) => `
-                <label class="color-choice"><input type="radio" name="vehicle-color" data-key="vehicleColor" value="${key}" aria-label="${color.label}" ${this._config.vehicleColor === key ? "checked" : ""} /><span style="background: ${color.hex}" title="${color.label}"></span></label>
-              `).join("")}
-            </div>
+            ${["gloss", "matte"].map((finishKey) => `
+              <div class="color-group">
+                <span class="color-group-label">${finishKey === "gloss" ? "Glossy" : "Matte"}</span>
+                <div class="color-picker" role="radiogroup" aria-label="Cybertruck ${finishKey} exterior color">
+                  ${Object.entries(VEHICLE_COLORS).filter(([, color]) => (color.finish || "gloss") === finishKey).map(([key, color]) => `
+                    <label class="color-choice"><input type="radio" name="vehicle-color" data-key="vehicleColor" value="${key}" aria-label="${color.label}" ${this._config.vehicleColor === key ? "checked" : ""} /><span class="swatch-${finishKey}" style="background: ${color.hex}" title="${color.label}"></span></label>
+                  `).join("")}
+                </div>
+              </div>
+            `).join("")}
           </div>
           <div class="field full">
             <label for="vehicle-scale">Vehicle scale</label>

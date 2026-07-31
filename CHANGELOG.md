@@ -7,6 +7,16 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-07-31
+
+### Fixed
+
+- Exterior repaint now affects only body panels. Headlights, brake/tail lights, indicators, reflectors, the licence plate, and interior buttons are no longer tinted by the selected color.
+
+### Added
+
+- Matte and additional glossy color options (Quicksilver, Racing green, Ember orange, and matte black/white/gray/blue/green/red). The configuration picker groups swatches by Glossy and Matte finish, and each finish applies its own metalness/roughness/clearcoat.
+
 ## [0.1.16] - 2026-07-31
 
 ### Fixed
