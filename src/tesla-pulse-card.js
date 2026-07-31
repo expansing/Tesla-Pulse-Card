@@ -1016,10 +1016,10 @@ class TeslaPulseCard extends HTMLElement {
       const modelSize = bounds.getSize(new THREE.Vector3());
       const modelCenter = bounds.getCenter(new THREE.Vector3());
       anchors = {
-        trunk: { point: new THREE.Vector3(bounds.min.x + modelSize.x * 0.13, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 0 },
+        frunk: { point: new THREE.Vector3(bounds.min.x + modelSize.x * 0.13, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 0 },
         lock: { point: new THREE.Vector3(modelCenter.x, modelCenter.y + modelSize.y * 0.1, bounds.min.z + modelSize.z * 0.48), offsetY: 0 },
         climate: { point: new THREE.Vector3(modelCenter.x, bounds.max.y - modelSize.y * 0.2, modelCenter.z), offsetY: -38 },
-        frunk: { point: new THREE.Vector3(bounds.max.x - modelSize.x * 0.13, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 0 },
+        trunk: { point: new THREE.Vector3(bounds.max.x - modelSize.x * 0.13, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 0 },
       };
     };
     let frameId;

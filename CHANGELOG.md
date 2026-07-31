@@ -7,6 +7,15 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-07-31
+
+### Changed
+
+- Replace 3D vehicle model with user-provided Tesla model asset (tesla_car1.fbx).
+- Fix trunk/frunk anchor positioning to match correct vehicle orientation.
+- Improve headlight visibility and rendering in 3D scene.
+- Remove duplicate wheel geometry during model export.
+
 ## [0.1.10] - 2026-07-31
 
 ### Added
