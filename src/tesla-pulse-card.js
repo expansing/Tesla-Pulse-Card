@@ -1001,11 +1001,12 @@ class TeslaPulseCard extends HTMLElement {
 
     let activeModel;
     const paintNameInclude = /(body|paint|door|bonnet|bumper|hood|fender|boot|rear|front|putih|satin|panel)/;
-    const paintNameExclude = /(glass|window|light|lamp|head|fog|indicator|tail|hub|wheel|tire|rim|rubber|mirror|interior|seat|carpet|lcd|chrome|aluminium|plastic|trim|chassis)/;
+    // "rim" is boundary-guarded (^|[^a-z]) so it matches the wheel token but not the substring inside "primary".
+    const paintNameExclude = /(glass|window|light|lamp|head|fog|indicator|tail|hub|wheel|tire|(^|[^a-z])rim|rubber|mirror|interior|seat|carpet|lcd|chrome|aluminium|plastic|trim|chassis)/;
     const lightSurface = /(light|lamp|head|fog|indicator|tail|brake|signal|turn|reverse)/;
     const frameSurface = /(pillar|frame|trim|window_trim|door_frame|black|just_black|hitam|sills|bodysills)/;
     const interiorSurface = /(interior|seat|leather|carpet|dashboard|lcd|steer|panel|belt|console|plastic|inside)/;
-    const rimSurface = /(rim|hub|caliper|disc|wheel_face|wheelcap)/;
+    const rimSurface = /((^|[^a-z])rim|hub|caliper|disc|wheel_face|wheelcap)/;
 
     const applyModelAppearance = (model) => {
       const vehicleColor = VEHICLE_COLORS[this._config.vehicleColor] || VEHICLE_COLORS.factory;
@@ -1014,7 +1015,7 @@ class TeslaPulseCard extends HTMLElement {
       model.traverse((object) => {
         const materials = Array.isArray(object.material) ? object.material : [object.material];
         const objectName = (object.name || "").toLowerCase();
-        const wheelAssembly = /(hub|wheel|rim|caliper|disc)/.test(objectName);
+        const wheelAssembly = /(hub|wheel|(^|[^a-z])rim|caliper|disc)/.test(objectName);
         materials.forEach((material) => {
           if (!material) return;
           const materialName = material.name.toLowerCase();
@@ -1068,7 +1069,7 @@ class TeslaPulseCard extends HTMLElement {
             material.roughness = 0.19;
             material.clearcoat = 0.7;
             material.clearcoatRoughness = 0.11;
-          } else if (!/(glass|window|light|lamp|head|fog|indicator|tail|hub|wheel|tire|rim|rubber|mirror|interior|seat|carpet|lcd|chrome|aluminium|plastic|trim|chassis)/.test(`${materialName} ${objectName}`)) {
+          } else if (!/(glass|window|light|lamp|head|fog|indicator|tail|hub|wheel|tire|(^|[^a-z])rim|rubber|mirror|interior|seat|carpet|lcd|chrome|aluminium|plastic|trim|chassis)/.test(`${materialName} ${objectName}`)) {
             if (applyCustomPaint) {
               material.map = null;
               material.emissiveMap = null;

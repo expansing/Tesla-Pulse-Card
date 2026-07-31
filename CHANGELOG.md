@@ -7,6 +7,12 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-07-31
+
+### Fixed
+
+- Vehicle body now recolors from the configuration picker. The paint classifier matched the "rim" wheel token as a substring inside the "primary" body material, forcing every exterior panel to black; the token is now word-boundary guarded.
+
 ## [0.1.15] - 2026-07-31
 
 ### Fixed
