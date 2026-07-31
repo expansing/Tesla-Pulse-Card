@@ -1027,8 +1027,16 @@ class TeslaPulseCard extends HTMLElement {
       const applyCustomPaint = this._config.vehicleColor !== "factory";
 
       model.traverse((object) => {
-        const materials = Array.isArray(object.material) ? object.material : [object.material];
         const objectName = (object.name || "").toLowerCase();
+        const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        const lightMesh = objectMaterials.some((material) => material
+          && (lightSurface.test(material.name.toLowerCase()) || lightSurface.test(objectName)));
+        if (lightMesh && !object.userData.teslaPulseLightMaterial) {
+          const lightMaterials = objectMaterials.map((material) => material?.clone());
+          object.material = Array.isArray(object.material) ? lightMaterials : lightMaterials[0];
+          object.userData.teslaPulseLightMaterial = true;
+        }
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
         const wheelAssembly = /(hub|wheel|(^|[^a-z])rim|caliper|disc)/.test(objectName);
         materials.forEach((material) => {
           if (!material) return;
@@ -1085,7 +1093,7 @@ class TeslaPulseCard extends HTMLElement {
             material.clearcoat = finish.clearcoat;
             material.clearcoatRoughness = finish.clearcoatRoughness;
           } else if (lightSurface.test(materialName) || lightSurface.test(objectName)) {
-            const rearLight = /(tail|rear|brake|red)/.test(`${materialName} ${objectName}`);
+            const rearLight = /(tail|rear|brake|boot|belakang)/.test(objectName);
             material.transparent = false;
             material.opacity = 1;
             material.alphaTest = 0.08;
@@ -1130,11 +1138,19 @@ class TeslaPulseCard extends HTMLElement {
       bounds = new THREE.Box3().setFromObject(vehicle);
       const modelSize = bounds.getSize(new THREE.Vector3());
       const modelCenter = bounds.getCenter(new THREE.Vector3());
+      vehicle.updateMatrixWorld(true);
+      const vehicleInverse = vehicle.matrixWorld.clone().invert();
+      const cargoAnchor = (meshName, fallback) => {
+        const cargoMesh = cybertruck.getObjectByName(meshName);
+        if (!cargoMesh) return fallback;
+        const cargoBounds = new THREE.Box3().setFromObject(cargoMesh).applyMatrix4(vehicleInverse);
+        return { point: cargoBounds.getCenter(new THREE.Vector3()), offsetY: 0 };
+      };
       anchors = {
-        frunk: { point: new THREE.Vector3(bounds.min.x + modelSize.x * 0.13, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 0 },
+        frunk: cargoAnchor("bonnet_ok", { point: new THREE.Vector3(bounds.min.x + modelSize.x * 0.02, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 92 }),
         lock: { point: new THREE.Vector3(modelCenter.x, modelCenter.y + modelSize.y * 0.1, bounds.min.z + modelSize.z * 0.48), offsetY: 0 },
         climate: { point: new THREE.Vector3(modelCenter.x, bounds.max.y - modelSize.y * 0.2, modelCenter.z), offsetY: -38 },
-        trunk: { point: new THREE.Vector3(bounds.max.x - modelSize.x * 0.13, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 0 },
+        trunk: cargoAnchor("boot", { point: new THREE.Vector3(bounds.max.x - modelSize.x * 0.02, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 65 }),
       };
       activeModel = cybertruck;
       vehicle.visible = true;

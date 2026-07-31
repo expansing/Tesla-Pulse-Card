@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and this project follows Semantic
 Versioning.
 
 ## [Unreleased]
+
+## [0.1.19] - 2026-07-31
+
+### Fixed
+
+- Give each light mesh its own material so shared front and rear lenses retain natural white headlight and red tail-light colors.
+- Anchor the frunk and trunk controls to the bonnet and boot meshes so they remain aligned while the vehicle rotates.
+
 ## [0.1.18] - 2026-07-31
 bump version
 ## [0.1.17] - 2026-07-31
