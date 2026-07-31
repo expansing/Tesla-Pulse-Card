@@ -6,7 +6,8 @@ The format is based on Keep a Changelog and this project follows Semantic
 Versioning.
 
 ## [Unreleased]
-
+## [0.1.18] - 2026-07-31
+bump version
 ## [0.1.17] - 2026-07-31
 
 ### Fixed
