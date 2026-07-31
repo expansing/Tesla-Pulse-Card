@@ -54,6 +54,12 @@ themeMode: auto
 vehicleColor: red
 vehicleScale: 1.1
 sensorTapAction: more-info
+customSensors:
+  - entity: sensor.juniper_coolant_temperature
+    label: Coolant
+    icon: thermometer
+    display: value
+    accent: lime
 confirmations:
   unlock: true
   cargo: true
@@ -109,7 +115,9 @@ Set `vehicleColor` to `factory`, `black`, `white`, `red`, `blue`, or `gray`.
 The visual editor provides the same choices as color swatches.
 
 Set `vehicleScale` between `0.75` and `1.2` to resize the Cybertruck. The
-spatial vehicle controls are recalculated for the selected size.
+spatial vehicle controls are recalculated for the selected size. The angle set
+by dragging the 3D vehicle is retained when the card refreshes or its
+configuration is updated.
 
 Set `themeMode` to `auto`, `black`, or `white`. Auto follows Home Assistant's
 current light/dark theme and applies the selected appearance to the entire card.
@@ -117,6 +125,13 @@ current light/dark theme and applies the selected appearance to the entire card.
 Set `sensorTapAction` to `more-info` (default) to open Home Assistant's native
 entity detail and history graph for telemetry readouts, or `none` to disable
 sensor taps.
+
+Use `customSensors` to add any Home Assistant entity to a separate live
+telemetry group. Each entry requires `entity`; `label` is optional. Set `icon`
+to a Material Design icon name without the `mdi:` prefix. Set `display` to
+`value` (formatted value and unit) or `state` (raw entity state), and choose an
+`accent` of `ice`, `lime`, `amber`, `rose`, or `violet`. The visual editor
+provides equivalent add, label, display, icon, accent, and remove controls.
 
 ## HACS Release Flow
 

@@ -7,6 +7,21 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-07-31
+
+### Added
+
+- Add arbitrary labeled telemetry entities with configurable icon, text format,
+	and accent color.
+- Retain the 3D vehicle orientation after configuration changes.
+- Enhance imported Cybertruck materials with glossy paint and matte trim.
+
+### Fixed
+
+- Separate the charge-limit percentage and energy-flow caption.
+- Automatically create a matching release tag when a new VERSION is pushed to
+	main.
+
 ## [0.1.8] - 2026-07-30
 
 ### Added

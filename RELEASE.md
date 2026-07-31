@@ -12,9 +12,10 @@
 3. Add a matching section to `CHANGELOG.md` with the same version number.
 4. Verify `tesla-pulse-card.js` is the artifact you want to ship.
 5. Commit changes.
-6. Run the **Release** workflow manually. Leave its tag input empty to create
-  and publish `v<VERSION>`, or enter an existing matching tag to reuse it.
-7. Wait for the GitHub Actions Release workflow to publish the release.
+6. Push the commit to `main`. The **Release** workflow creates and publishes
+  `v<VERSION>` automatically when that tag does not already exist.
+7. Use manual dispatch only to republish or explicitly reuse an existing
+  matching tag.
 8. In HACS, open the repository and install or update to the new release.
 
 ## Commands
@@ -33,8 +34,9 @@ git push origin main
 - Validation runs on every push and pull request.
 - The release workflow uploads both `tesla-pulse-card.js` and
   `tesla-pulse-card.zip`.
-- A manually dispatched release creates its matching tag only after validation
-  and archive creation succeed.
+- A push to `main` creates its matching tag only after validation and archive
+  creation succeed. Existing version tags are not republished on ordinary
+  branch pushes.
 - The release workflow fails if tag, `VERSION`, and `CHANGELOG.md` are not in
   sync.
 - GitHub release notes are taken from the matching section in `CHANGELOG.md`.
