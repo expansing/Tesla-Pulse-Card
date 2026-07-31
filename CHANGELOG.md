@@ -7,6 +7,13 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-07-31
+
+### Fixed
+
+- Reduce card editor lag by debouncing config-triggered rerenders.
+- Defer heavy 3D initialization in edit mode so the configuration panel opens smoothly.
+
 ## [0.1.14] - 2026-07-31
 
 ### Fixed

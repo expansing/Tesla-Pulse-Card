@@ -204,17 +204,19 @@ class TeslaPulseCard extends HTMLElement {
       },
     };
 
-    if (
-      this._isRendered
-      && this._vehicleScene?.applyVehicleColor
-      && this._isOnlyVehicleColorChange(this._config, nextConfig)
-    ) {
-      this._config = nextConfig;
+    const vehicleColorChanged = Boolean(this._config) && this._config.vehicleColor !== nextConfig.vehicleColor;
+    this._config = nextConfig;
+
+    if (this._isRendered && this._vehicleScene?.applyVehicleColor && vehicleColorChanged) {
       this._vehicleScene.applyVehicleColor();
       return;
     }
 
-    this._config = nextConfig;
+    if (this._isRendered && this._inEditMode()) {
+      this._scheduleRender();
+      return;
+    }
+
     this._render();
   }
 
@@ -234,13 +236,16 @@ class TeslaPulseCard extends HTMLElement {
     return 7;
   }
 
-  _isOnlyVehicleColorChange(previousConfig, nextConfig) {
-    if (!previousConfig || !nextConfig) return false;
-    if (previousConfig.vehicleColor === nextConfig.vehicleColor) return false;
+  _inEditMode() {
+    return Boolean(this._hass?.editMode);
+  }
 
-    const previous = { ...previousConfig, vehicleColor: undefined };
-    const next = { ...nextConfig, vehicleColor: undefined };
-    return JSON.stringify(previous) === JSON.stringify(next);
+  _scheduleRender() {
+    clearTimeout(this._renderDebounceTimer);
+    this._renderDebounceTimer = setTimeout(() => {
+      this._renderDebounceTimer = undefined;
+      this._render();
+    }, 60);
   }
 
   _vehicleOrbitStorageKey() {
@@ -1063,6 +1068,16 @@ class TeslaPulseCard extends HTMLElement {
             material.roughness = 0.19;
             material.clearcoat = 0.7;
             material.clearcoatRoughness = 0.11;
+          } else if (!/(glass|window|light|lamp|head|fog|indicator|tail|hub|wheel|tire|rim|rubber|mirror|interior|seat|carpet|lcd|chrome|aluminium|plastic|trim|chassis)/.test(`${materialName} ${objectName}`)) {
+            if (applyCustomPaint) {
+              material.map = null;
+              material.emissiveMap = null;
+            }
+            material.color.set(vehicleColor.hex);
+            material.metalness = 0.72;
+            material.roughness = 0.19;
+            material.clearcoat = 0.7;
+            material.clearcoatRoughness = 0.11;
           } else if (lightSurface.test(materialName) || lightSurface.test(objectName)) {
             const rearLight = /(tail|rear|brake|red)/.test(`${materialName} ${objectName}`);
             material.transparent = false;
@@ -1245,6 +1260,10 @@ class TeslaPulseCard extends HTMLElement {
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
     }
+    clearTimeout(this._renderDebounceTimer);
+    this._renderDebounceTimer = undefined;
+    clearTimeout(this._vehicleInitTimer);
+    this._vehicleInitTimer = undefined;
     this._disposeVehicleScene();
 
     const battery = this._number("battery");
@@ -1665,7 +1684,15 @@ class TeslaPulseCard extends HTMLElement {
       </article>
     `;
     this._bindEvents();
-    this._initVehicleScene();
+    if (this._inEditMode()) {
+      this._vehicleInitTimer = setTimeout(() => {
+        this._vehicleInitTimer = undefined;
+        if (!this.isConnected) return;
+        this._initVehicleScene();
+      }, 180);
+    } else {
+      this._initVehicleScene();
+    }
     this._isRendered = true;
   }
 
