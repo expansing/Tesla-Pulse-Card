@@ -7,6 +7,13 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-07-31
+
+### Changed
+
+- Set the default vehicle color preset to black.
+- Render wheel rims/hubs with a black finish by default.
+
 ## [0.1.12] - 2026-07-31
 
 ### Fixed

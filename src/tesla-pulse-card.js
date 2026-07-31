@@ -60,7 +60,7 @@ const DEFAULT_CONFIG = {
   entities: {},
   entityMode: "auto",
   themeMode: "auto",
-  vehicleColor: "factory",
+  vehicleColor: "black",
   vehicleScale: 1,
   sensorTapAction: "more-info",
   sensorVisuals: {},
@@ -112,7 +112,7 @@ const ACTION_DEFINITIONS = {
 const SPATIAL_ACTIONS = new Set(["lock", "climate", "frunk", "openFrunk", "trunk", "openTrunk"]);
 
 const VEHICLE_COLORS = {
-  factory: { label: "Factory finish", hex: "#ffffff" },
+  factory: { label: "Model 3 yellow", hex: "#f4c71b" },
   black: { label: "Solid black", hex: "#161719" },
   white: { label: "Pearl white", hex: "#f5f6f4" },
   red: { label: "Ultra red", hex: "#7b0b19" },
@@ -784,6 +784,7 @@ class TeslaPulseCard extends HTMLElement {
 
     const vehicle = new THREE.Group();
     vehicle.rotation.y = -0.5;
+    vehicle.visible = false;
     scene.add(vehicle);
 
     const bodyMaterial = new THREE.MeshPhysicalMaterial({
@@ -981,17 +982,79 @@ class TeslaPulseCard extends HTMLElement {
       vehicle.clear();
       const cybertruck = gltf.scene;
       const vehicleColor = VEHICLE_COLORS[this._config.vehicleColor] || VEHICLE_COLORS.factory;
+      const applyCustomPaint = this._config.vehicleColor !== "factory";
+      const paintNameInclude = /(body|paint|door|bonnet|bumper|hood|fender|boot|rear|front|putih|satin|panel)/;
+      const paintNameExclude = /(glass|window|light|lamp|head|fog|indicator|tail|hub|wheel|tire|rim|rubber|mirror|interior|seat|carpet|lcd|chrome|aluminium|plastic|trim|chassis)/;
+      const lightSurface = /(light|lamp|head|fog|indicator|tail|brake|signal|turn|reverse)/;
+      const frameSurface = /(pillar|frame|trim|window_trim|door_frame|black|just_black|hitam|sills|bodysills)/;
+      const interiorSurface = /(interior|seat|leather|carpet|dashboard|lcd|steer|panel|belt|console|plastic|inside)/;
+      const rimSurface = /(rim|hub|caliper|disc|wheel_face|wheelcap)/;
       cybertruck.traverse((object) => {
         const materials = Array.isArray(object.material) ? object.material : [object.material];
+        const objectName = (object.name || "").toLowerCase();
         materials.forEach((material) => {
           if (!material) return;
           const materialName = material.name.toLowerCase();
-          if (["body_mat", "car_paint_mat"].includes(material.name)) {
+          const paintableByName = (paintNameInclude.test(materialName) || paintNameInclude.test(objectName))
+            && !paintNameExclude.test(materialName)
+            && !paintNameExclude.test(objectName);
+          if (rimSurface.test(materialName) || rimSurface.test(objectName)) {
+            material.map = null;
+            material.emissiveMap = null;
+            material.color.set("#121418");
+            material.emissive.set("#000000");
+            material.emissiveIntensity = 0;
+            material.metalness = 0.24;
+            material.roughness = 0.56;
+            material.transparent = false;
+            material.opacity = 1;
+            material.depthWrite = true;
+            material.side = THREE.FrontSide;
+          } else if (frameSurface.test(materialName) || frameSurface.test(objectName)) {
+            material.map = null;
+            material.emissiveMap = null;
+            material.color.set("#0f1115");
+            material.emissive.set("#000000");
+            material.emissiveIntensity = 0;
+            material.metalness = 0.12;
+            material.roughness = 0.66;
+            material.transparent = false;
+            material.opacity = 1;
+            material.depthWrite = true;
+            material.side = THREE.FrontSide;
+          } else if (interiorSurface.test(materialName) || interiorSurface.test(objectName)) {
+            material.map = null;
+            material.emissiveMap = null;
+            material.color.set("#15181c");
+            material.emissive.set("#000000");
+            material.emissiveIntensity = 0;
+            material.metalness = 0.08;
+            material.roughness = 0.74;
+            material.transparent = false;
+            material.opacity = 1;
+            material.depthWrite = true;
+            material.side = THREE.DoubleSide;
+          } else if (["body_mat", "car_paint_mat"].includes(material.name) || paintableByName) {
+            if (applyCustomPaint) {
+              material.map = null;
+              material.emissiveMap = null;
+            }
             material.color.set(vehicleColor.hex);
             material.metalness = 0.72;
             material.roughness = 0.19;
             material.clearcoat = 0.7;
             material.clearcoatRoughness = 0.11;
+          } else if (lightSurface.test(materialName) || lightSurface.test(objectName)) {
+            const rearLight = /(tail|rear|brake|red)/.test(`${materialName} ${objectName}`);
+            material.transparent = false;
+            material.opacity = 1;
+            material.alphaTest = 0.08;
+            material.depthWrite = true;
+            material.metalness = 0.05;
+            material.roughness = 0.14;
+            material.color.set(rearLight ? "#ff3b30" : "#f4fbff");
+            material.emissive.set(rearLight ? "#ff120a" : "#bdeeff");
+            material.emissiveIntensity = rearLight ? 1.45 : 1.1;
           } else if (/(glass|window)/.test(materialName)) {
             material.metalness = 0.68;
             material.roughness = 0.12;
@@ -1021,6 +1084,7 @@ class TeslaPulseCard extends HTMLElement {
         climate: { point: new THREE.Vector3(modelCenter.x, bounds.max.y - modelSize.y * 0.2, modelCenter.z), offsetY: -38 },
         trunk: { point: new THREE.Vector3(bounds.max.x - modelSize.x * 0.13, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 0 },
       };
+      vehicle.visible = true;
     };
     let frameId;
     const orbit = this._restoreVehicleOrbit();
