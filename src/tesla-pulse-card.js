@@ -183,7 +183,7 @@ class TeslaPulseCard extends HTMLElement {
       throw new Error("Tesla Pulse Card requires a configuration object.");
     }
 
-    this._config = {
+    const nextConfig = {
       ...DEFAULT_CONFIG,
       ...config,
       entities: { ...DEFAULT_CONFIG.entities, ...(config.entities || {}) },
@@ -203,6 +203,18 @@ class TeslaPulseCard extends HTMLElement {
         ...(config.confirmations || {}),
       },
     };
+
+    if (
+      this._isRendered
+      && this._vehicleScene?.applyVehicleColor
+      && this._isOnlyVehicleColorChange(this._config, nextConfig)
+    ) {
+      this._config = nextConfig;
+      this._vehicleScene.applyVehicleColor();
+      return;
+    }
+
+    this._config = nextConfig;
     this._render();
   }
 
@@ -220,6 +232,15 @@ class TeslaPulseCard extends HTMLElement {
 
   getCardSize() {
     return 7;
+  }
+
+  _isOnlyVehicleColorChange(previousConfig, nextConfig) {
+    if (!previousConfig || !nextConfig) return false;
+    if (previousConfig.vehicleColor === nextConfig.vehicleColor) return false;
+
+    const previous = { ...previousConfig, vehicleColor: undefined };
+    const next = { ...nextConfig, vehicleColor: undefined };
+    return JSON.stringify(previous) === JSON.stringify(next);
   }
 
   _vehicleOrbitStorageKey() {
@@ -972,24 +993,20 @@ class TeslaPulseCard extends HTMLElement {
         else child.material?.dispose?.();
       });
     };
-    const installCybertruck = (gltf) => {
-      if (disposed) {
-        disposeObject(gltf.scene);
-        return;
-      }
 
-      vehicle.children.forEach(disposeObject);
-      vehicle.clear();
-      const cybertruck = gltf.scene;
+    let activeModel;
+    const paintNameInclude = /(body|paint|door|bonnet|bumper|hood|fender|boot|rear|front|putih|satin|panel)/;
+    const paintNameExclude = /(glass|window|light|lamp|head|fog|indicator|tail|hub|wheel|tire|rim|rubber|mirror|interior|seat|carpet|lcd|chrome|aluminium|plastic|trim|chassis)/;
+    const lightSurface = /(light|lamp|head|fog|indicator|tail|brake|signal|turn|reverse)/;
+    const frameSurface = /(pillar|frame|trim|window_trim|door_frame|black|just_black|hitam|sills|bodysills)/;
+    const interiorSurface = /(interior|seat|leather|carpet|dashboard|lcd|steer|panel|belt|console|plastic|inside)/;
+    const rimSurface = /(rim|hub|caliper|disc|wheel_face|wheelcap)/;
+
+    const applyModelAppearance = (model) => {
       const vehicleColor = VEHICLE_COLORS[this._config.vehicleColor] || VEHICLE_COLORS.factory;
       const applyCustomPaint = this._config.vehicleColor !== "factory";
-      const paintNameInclude = /(body|paint|door|bonnet|bumper|hood|fender|boot|rear|front|putih|satin|panel)/;
-      const paintNameExclude = /(glass|window|light|lamp|head|fog|indicator|tail|hub|wheel|tire|rim|rubber|mirror|interior|seat|carpet|lcd|chrome|aluminium|plastic|trim|chassis)/;
-      const lightSurface = /(light|lamp|head|fog|indicator|tail|brake|signal|turn|reverse)/;
-      const frameSurface = /(pillar|frame|trim|window_trim|door_frame|black|just_black|hitam|sills|bodysills)/;
-      const interiorSurface = /(interior|seat|leather|carpet|dashboard|lcd|steer|panel|belt|console|plastic|inside)/;
-      const rimSurface = /(rim|hub|caliper|disc|wheel_face|wheelcap)/;
-      cybertruck.traverse((object) => {
+
+      model.traverse((object) => {
         const materials = Array.isArray(object.material) ? object.material : [object.material];
         const objectName = (object.name || "").toLowerCase();
         const wheelAssembly = /(hub|wheel|rim|caliper|disc)/.test(objectName);
@@ -1067,6 +1084,18 @@ class TeslaPulseCard extends HTMLElement {
           material.needsUpdate = true;
         });
       });
+    };
+
+    const installCybertruck = (gltf) => {
+      if (disposed) {
+        disposeObject(gltf.scene);
+        return;
+      }
+
+      vehicle.children.forEach(disposeObject);
+      vehicle.clear();
+      const cybertruck = gltf.scene;
+      applyModelAppearance(cybertruck);
       cybertruck.rotation.y = Math.PI / 2;
       let bounds = new THREE.Box3().setFromObject(cybertruck);
       const size = bounds.getSize(new THREE.Vector3());
@@ -1086,6 +1115,7 @@ class TeslaPulseCard extends HTMLElement {
         climate: { point: new THREE.Vector3(modelCenter.x, bounds.max.y - modelSize.y * 0.2, modelCenter.z), offsetY: -38 },
         trunk: { point: new THREE.Vector3(bounds.max.x - modelSize.x * 0.13, modelCenter.y + modelSize.y * 0.45, modelCenter.z), offsetY: 0 },
       };
+      activeModel = cybertruck;
       vehicle.visible = true;
     };
     let frameId;
@@ -1189,8 +1219,13 @@ class TeslaPulseCard extends HTMLElement {
     }
 
     this._vehicleScene = {
+      applyVehicleColor: () => {
+        if (!activeModel || disposed) return;
+        applyModelAppearance(activeModel);
+      },
       dispose: () => {
         disposed = true;
+        activeModel = undefined;
         cancelAnimationFrame(frameId);
         resizeObserver.disconnect();
         canvas.removeEventListener("pointerdown", pointerDown);

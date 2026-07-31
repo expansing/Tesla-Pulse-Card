@@ -7,6 +7,13 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-07-31
+
+### Fixed
+
+- Apply vehicle color changes in-place without reloading the 3D model.
+- Remove configuration editor stalls when switching card color presets.
+
 ## [0.1.13] - 2026-07-31
 
 ### Changed
