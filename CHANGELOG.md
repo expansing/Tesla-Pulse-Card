@@ -7,6 +7,13 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-07-31
+
+### Fixed
+
+- Preserve the FBX-authored wheel transforms during GLB export.
+- Restore the supplied headlight texture under the filename referenced by the FBX.
+
 ## [0.1.11] - 2026-07-31
 
 ### Changed
