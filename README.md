@@ -60,6 +60,13 @@ customSensors:
     icon: thermometer
     display: value
     accent: lime
+    group: charging
+sensorVisuals:
+  packVoltage:
+    label: HV pack
+    icon: flash
+    display: value
+    accent: violet
 confirmations:
   unlock: true
   cargo: true
@@ -130,8 +137,14 @@ Use `customSensors` to add any Home Assistant entity to a separate live
 telemetry group. Each entry requires `entity`; `label` is optional. Set `icon`
 to a Material Design icon name without the `mdi:` prefix. Set `display` to
 `value` (formatted value and unit) or `state` (raw entity state), and choose an
-`accent` of `ice`, `lime`, `amber`, `rose`, or `violet`. The visual editor
-provides equivalent add, label, display, icon, accent, and remove controls.
+`accent` of `ice`, `lime`, `amber`, `rose`, or `violet`. Choose `group` as
+`environment`, `highVoltage`, or `charging` to place the row with related
+telemetry. The visual editor provides equivalent add, label, display, icon,
+accent, group, and remove controls.
+
+Use `sensorVisuals` to override the same label, icon, display, and accent
+settings for built-in telemetry rows. Its keys are the existing sensor names,
+such as `packVoltage`, `chargePower`, or `insideTemperature`.
 
 ## HACS Release Flow
 

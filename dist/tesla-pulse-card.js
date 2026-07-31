@@ -3949,6 +3949,7 @@ const DEFAULT_CONFIG = {
   vehicleColor: "factory",
   vehicleScale: 1,
   sensorTapAction: "more-info",
+  sensorVisuals: {},
   customSensors: [],
   quickActions: ["sentry", "chargePort", "wake", "honk", "flashLights", "defrost"],
   display: {
@@ -4013,6 +4014,30 @@ const CUSTOM_SENSOR_ACCENTS = {
   violet: "#bba7ff",
 };
 
+const TELEMETRY_GROUPS = {
+  environment: "Environment",
+  highVoltage: "High voltage",
+  charging: "Charging interface",
+};
+
+const TELEMETRY_SENSOR_FIELDS = [
+  ["environment", "insideTemperature", "Cabin"],
+  ["environment", "outsideTemperature", "Outside"],
+  ["environment", "odometer", "Odometer"],
+  ["environment", "energyRemaining", "Energy remaining"],
+  ["highVoltage", "packVoltage", "Pack voltage"],
+  ["highVoltage", "packCurrent", "Pack current"],
+  ["highVoltage", "batteryHeater", "Battery heater"],
+  ["highVoltage", "batteryBalance", "Balance"],
+  ["highVoltage", "voltageImbalance", "Brick delta"],
+  ["charging", "chargePower", "Charge power"],
+  ["charging", "chargeCurrent", "Charge current"],
+  ["charging", "chargerVoltage", "Charger voltage"],
+  ["charging", "chargeEnergyAdded", "Energy added"],
+  ["charging", "chargingCableType", "Cable"],
+  ["charging", "chargePortLatch", "Port latch"],
+];
+
 const normalizeVehicleScale = (value) => {
   const scale = Number.parseFloat(value);
   if (!Number.isFinite(scale)) {
@@ -4052,6 +4077,7 @@ class TeslaPulseCard extends HTMLElement {
       vehicleColor: VEHICLE_COLORS[config.vehicleColor] ? config.vehicleColor : DEFAULT_CONFIG.vehicleColor,
       vehicleScale: normalizeVehicleScale(config.vehicleScale),
       sensorTapAction: config.sensorTapAction === "none" ? "none" : "more-info",
+      sensorVisuals: this._normalizeSensorVisuals(config.sensorVisuals),
       customSensors: this._normalizeCustomSensors(config.customSensors),
       quickActions: this._sanitizeQuickActions(config.quickActions),
       display: {
@@ -4080,6 +4106,31 @@ class TeslaPulseCard extends HTMLElement {
 
   getCardSize() {
     return 7;
+  }
+
+  _vehicleOrbitStorageKey() {
+    return `tesla-pulse-orbit:${this._config.title}:${this._entityId("battery") || "vehicle"}`;
+  }
+
+  _restoreVehicleOrbit() {
+    if (this._vehicleOrbit) return this._vehicleOrbit;
+    try {
+      const orbit = JSON.parse(globalThis.sessionStorage?.getItem(this._vehicleOrbitStorageKey()) || "null");
+      if (Number.isFinite(orbit?.yaw) && Number.isFinite(orbit?.pitch)) {
+        return orbit;
+      }
+    } catch (_) {
+      // Session storage can be unavailable in embedded Home Assistant contexts.
+    }
+    return { yaw: 0, pitch: 0 };
+  }
+
+  _persistVehicleOrbit() {
+    try {
+      globalThis.sessionStorage?.setItem(this._vehicleOrbitStorageKey(), JSON.stringify(this._vehicleOrbit));
+    } catch (_) {
+      // Keep the in-memory orbit even when session storage is unavailable.
+    }
   }
 
   _entityId(key) {
@@ -4118,7 +4169,35 @@ class TeslaPulseCard extends HTMLElement {
         icon: typeof sensor.icon === "string" ? sensor.icon.trim().replace(/^mdi:/, "") : "",
         display: sensor.display === "state" ? "state" : "value",
         accent: CUSTOM_SENSOR_ACCENTS[sensor.accent] ? sensor.accent : "rose",
+        group: TELEMETRY_GROUPS[sensor.group] ? sensor.group : "environment",
       }));
+  }
+
+  _normalizeSensorVisuals(visuals) {
+    if (!visuals || typeof visuals !== "object") return {};
+    return Object.fromEntries(Object.entries(visuals).map(([key, visual]) => [key, {
+      label: typeof visual?.label === "string" ? visual.label.trim() : "",
+      icon: typeof visual?.icon === "string" ? visual.icon.trim().replace(/^mdi:/, "") : "",
+      display: visual?.display === "state" ? "state" : "value",
+      accent: CUSTOM_SENSOR_ACCENTS[visual?.accent] ? visual.accent : "",
+    }]));
+  }
+
+  _sensorPresentation(key, fallbackLabel) {
+    const visual = this._config.sensorVisuals[key] || {};
+    return {
+      label: visual.label || fallbackLabel,
+      icon: visual.icon || "",
+      display: visual.display || "value",
+      accent: visual.accent || "",
+    };
+  }
+
+  _sensorValue(key, display, fallback = "Not received") {
+    const state = this._state(key);
+    if (!state) return fallback;
+    if (display === "state") return state.state;
+    return key === "voltageImbalance" ? this._formattedVoltageImbalance() : this._formatStateValue(state);
   }
 
   _customSensorValue(sensor) {
@@ -4340,7 +4419,7 @@ class TeslaPulseCard extends HTMLElement {
           ? "0 0 18px rgba(98, 230, 167, 0.62)"
           : "0 0 18px rgba(169, 239, 255, 0.5)";
       }
-      const energyCaption = energyRail.querySelector(".energy-caption");
+      const energyCaption = root.querySelector(".energy-caption");
       if (energyCaption) {
         energyCaption.textContent = isCharging ? "Energy flowing" : "High-voltage reserve";
       }
@@ -4370,9 +4449,8 @@ class TeslaPulseCard extends HTMLElement {
 
     root.querySelectorAll("[data-sensor-key]").forEach((node) => {
       const key = node.dataset.sensorKey;
-      const value = key === "voltageImbalance"
-        ? this._formattedVoltageImbalance()
-        : this._value(key, "Not received");
+      const display = this._config.sensorVisuals[key]?.display || "value";
+      const value = this._sensorValue(key, display);
       const valueNode = node.querySelector("strong");
       if (valueNode) valueNode.textContent = value;
     });
@@ -4443,16 +4521,17 @@ class TeslaPulseCard extends HTMLElement {
   }
 
   _systemRow(label, key, fallback = "Not received") {
-    const value = key === "voltageImbalance"
-      ? this._formattedVoltageImbalance()
-      : this._value(key, fallback);
+    const presentation = this._sensorPresentation(key, label);
+    const value = this._sensorValue(key, presentation.display, fallback);
     const entityId = this._entityId(key);
     const interactive = entityId && this._config.sensorTapAction === "more-info";
     const tag = interactive ? "button" : "div";
     const attributes = interactive
-      ? `type="button" data-sensor-entity="${this._escape(entityId)}" aria-label="Open ${this._escape(label)} history"`
+      ? `type="button" data-sensor-entity="${this._escape(entityId)}" aria-label="Open ${this._escape(presentation.label)} history"`
       : "";
-    return `<${tag} class="system-row" data-sensor-key="${key}" ${attributes}><span>${label}</span><strong>${this._escape(value)}</strong><i aria-hidden="true"></i></${tag}>`;
+    const icon = presentation.icon ? `<ha-icon icon="mdi:${this._escape(presentation.icon)}"></ha-icon>` : "";
+    const accent = presentation.accent ? `style="--row-accent: ${CUSTOM_SENSOR_ACCENTS[presentation.accent]}"` : "";
+    return `<${tag} class="system-row" data-sensor-key="${key}" ${accent} ${attributes}><span>${icon}${this._escape(presentation.label)}</span><strong>${this._escape(value)}</strong><i aria-hidden="true"></i></${tag}>`;
   }
 
   _tireLine() {
@@ -4830,7 +4909,7 @@ class TeslaPulseCard extends HTMLElement {
       };
     };
     let frameId;
-    const orbit = this._vehicleOrbit || { yaw: 0, pitch: 0 };
+    const orbit = this._restoreVehicleOrbit();
     let yaw = orbit.yaw;
     let targetYaw = yaw;
     let pitch = orbit.pitch;
@@ -4869,7 +4948,8 @@ class TeslaPulseCard extends HTMLElement {
       if (disposed) return;
       yaw += (targetYaw - yaw) * 0.08;
       pitch += (targetPitch - pitch) * 0.08;
-      vehicle.rotation.y = yaw + (dragging ? 0 : Math.sin(time * 0.00022) * 0.008);
+      this._vehicleOrbit = { yaw, pitch };
+      vehicle.rotation.y = yaw;
       vehicle.rotation.x = pitch;
       updateHotspots();
       renderer.render(scene, camera);
@@ -4879,7 +4959,7 @@ class TeslaPulseCard extends HTMLElement {
       dragging = true;
       previousX = event.clientX;
       previousY = event.clientY;
-      canvas.setPointerCapture?.(event.pointerId);
+      try { canvas.setPointerCapture?.(event.pointerId); } catch (_) {}
     };
     const pointerMove = (event) => {
       if (!dragging) return;
@@ -4891,7 +4971,11 @@ class TeslaPulseCard extends HTMLElement {
     };
     const pointerUp = (event) => {
       dragging = false;
-      canvas.releasePointerCapture?.(event.pointerId);
+      yaw = targetYaw;
+      pitch = targetPitch;
+      this._vehicleOrbit = { yaw, pitch };
+      this._persistVehicleOrbit();
+      try { canvas.releasePointerCapture?.(event.pointerId); } catch (_) {}
     };
     canvas.addEventListener("pointerdown", pointerDown);
     canvas.addEventListener("pointermove", pointerMove);
@@ -5237,7 +5321,7 @@ class TeslaPulseCard extends HTMLElement {
         .energy-limit { position: absolute; top: -5px; left: calc(${chargeLimitProgress}% - 1px); width: 2px; height: 16px; background: var(--ember); }
         .energy-value { position: absolute; bottom: 11px; z-index: 1; min-width: 34px; color: var(--ember); font-size: 12px; font-weight: 800; letter-spacing: 0; text-align: center; transform: translateX(-50%); }
         .energy-value[hidden] { display: none; }
-        .energy-caption { position: absolute; right: 0; bottom: -19px; color: var(--tone-muted); font-size: 10px; }
+        .energy-caption { position: absolute; z-index: 4; right: 24px; bottom: 4px; color: var(--tone-muted); font-size: 10px; }
         .charging-readout { position: relative; z-index: 2; padding: 13px 24px 15px; border-top: 1px solid var(--tone-line); background: var(--tone-bg); color: var(--tone-text); }
         .charging-readout .status-label { color: var(--lime); }
         .charging-readout .charging-values { color: var(--tone-text); }
@@ -5269,10 +5353,12 @@ class TeslaPulseCard extends HTMLElement {
         button.system-row { cursor: pointer; font: inherit; }
         button.system-row:hover { background: color-mix(in srgb, var(--system-accent) 8%, transparent); }
         button.system-row:focus-visible { outline: 2px solid var(--system-accent); outline-offset: 2px; }
+        .system-row { --effective-accent: var(--row-accent, var(--system-accent)); }
         .system-row span { min-width: 0; overflow: hidden; font-size: 10px; font-weight: 800; letter-spacing: 0; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
         .system-row strong { max-width: 128px; overflow: hidden; color: var(--tone-text); font-size: 14px; line-height: 1; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
-        .system-row i { grid-column: 1 / -1; display: block; height: 2px; opacity: 0.68; background: linear-gradient(90deg, var(--system-accent), transparent 66%); }
-        .custom-sensor-row { --system-accent: var(--custom-accent); }
+        .system-row i { grid-column: 1 / -1; display: block; height: 2px; opacity: 0.68; background: linear-gradient(90deg, var(--effective-accent), transparent 66%); }
+        .system-row span ha-icon { width: 15px; height: 15px; color: var(--effective-accent); }
+        .custom-sensor-row { --row-accent: var(--custom-accent); }
         .custom-sensor-row span { display: inline-flex; align-items: center; gap: 6px; }
         .custom-sensor-row ha-icon { width: 15px; height: 15px; color: var(--custom-accent); }
         .tire-line { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--system-accent) 22%, var(--tone-line)); border-radius: 6px; background: color-mix(in srgb, var(--system-accent) 12%, transparent); }
@@ -5337,7 +5423,7 @@ class TeslaPulseCard extends HTMLElement {
               <div class="stage-state ${this._statusTone(this._isOn("sentry"))}"><span>Guardian</span><strong>${this._isOn("sentry") ? "Sentry armed" : "Sentry off"}</strong></div>
               <div class="stage-state ${this._statusTone(this._isOn("windows"), this._isOn("windows"))}"><span>Windows</span><strong>${this._isOn("windows") ? "Open" : "Closed"}</strong></div>
             </div>
-            <div class="energy-rail" aria-label="Battery level ${batteryProgress} percent, charge limit ${chargeLimit ?? "unknown"} percent"><div class="energy-fill"></div><span class="energy-value" style="left: ${limitValuePosition}%" ${chargeLimit === undefined ? "hidden" : ""}>${chargeLimit === undefined ? "" : `${Math.round(chargeLimit)}%`}</span>${chargeLimit === undefined ? "" : `<span class="energy-limit" title="Charge limit ${Math.round(chargeLimit)} percent"></span>`}<span class="energy-caption">${isCharging ? "Energy flowing" : "High-voltage reserve"}</span></div>
+            <div class="energy-rail" aria-label="Battery level ${batteryProgress} percent, charge limit ${chargeLimit ?? "unknown"} percent"><div class="energy-fill"></div><span class="energy-value" style="left: ${limitValuePosition}%" ${chargeLimit === undefined ? "hidden" : ""}>${chargeLimit === undefined ? "" : `${Math.round(chargeLimit)}%`}</span>${chargeLimit === undefined ? "" : `<span class="energy-limit" title="Charge limit ${Math.round(chargeLimit)} percent"></span>`}</div><span class="energy-caption">${isCharging ? "Energy flowing" : "High-voltage reserve"}</span>
           </div>
         </section>
         <section class="charging-readout" ${(isCharging && display.showCharging) ? "" : "hidden"} aria-label="Charging details">
@@ -5354,10 +5440,9 @@ class TeslaPulseCard extends HTMLElement {
           <section class="systems" aria-label="Vehicle systems" ${display.showHealth ? "" : "hidden"}>
             <div class="section-heading"><h2>Telemetry lattice</h2><span class="status-label">Useful systems / live</span></div>
             <div class="systems-grid">
-              <div class="system-group system-environment"><h3 class="system-title"><ha-icon icon="mdi:home-thermometer-outline"></ha-icon>Environment</h3>${this._systemRow("Cabin", "insideTemperature")}${this._systemRow("Outside", "outsideTemperature")}${this._systemRow("Odometer", "odometer")}${this._systemRow("Energy remaining", "energyRemaining")}</div>
-              <div class="system-group system-high-voltage"><h3 class="system-title"><ha-icon icon="mdi:flash"></ha-icon>High voltage</h3>${this._systemRow("Pack voltage", "packVoltage")}${this._systemRow("Pack current", "packCurrent")}${this._systemRow("Battery heater", "batteryHeater")}${this._systemRow("Balance", "batteryBalance")}${this._systemRow("Brick delta", "voltageImbalance")}</div>
-              <div class="system-group system-charging"><h3 class="system-title"><ha-icon icon="mdi:ev-station"></ha-icon>Charging interface</h3>${this._systemRow("Charge power", "chargePower")}${this._systemRow("Charge current", "chargeCurrent")}${this._systemRow("Charger voltage", "chargerVoltage")}${this._systemRow("Energy added", "chargeEnergyAdded")}${this._systemRow("Cable", "chargingCableType")}${this._systemRow("Port latch", "chargePortLatch")}</div>
-              ${this._config.customSensors.length ? `<div class="system-group system-custom"><h3 class="system-title"><ha-icon icon="mdi:plus-circle-outline"></ha-icon>Custom telemetry</h3>${this._config.customSensors.map((sensor, index) => this._customSensorRow(sensor, index)).join("")}</div>` : ""}
+              <div class="system-group system-environment"><h3 class="system-title"><ha-icon icon="mdi:home-thermometer-outline"></ha-icon>Environment</h3>${TELEMETRY_SENSOR_FIELDS.filter(([group]) => group === "environment").map(([, key, label]) => this._systemRow(label, key)).join("")}${this._config.customSensors.map((sensor, index) => sensor.group === "environment" ? this._customSensorRow(sensor, index) : "").join("")}</div>
+              <div class="system-group system-high-voltage"><h3 class="system-title"><ha-icon icon="mdi:flash"></ha-icon>High voltage</h3>${TELEMETRY_SENSOR_FIELDS.filter(([group]) => group === "highVoltage").map(([, key, label]) => this._systemRow(label, key)).join("")}${this._config.customSensors.map((sensor, index) => sensor.group === "highVoltage" ? this._customSensorRow(sensor, index) : "").join("")}</div>
+              <div class="system-group system-charging"><h3 class="system-title"><ha-icon icon="mdi:ev-station"></ha-icon>Charging interface</h3>${TELEMETRY_SENSOR_FIELDS.filter(([group]) => group === "charging").map(([, key, label]) => this._systemRow(label, key)).join("")}${this._config.customSensors.map((sensor, index) => sensor.group === "charging" ? this._customSensorRow(sensor, index) : "").join("")}</div>
             </div>
           </section>
         </div>
@@ -5578,6 +5663,7 @@ class TeslaPulseCardEditor extends HTMLElement {
       vehicleColor: VEHICLE_COLORS[config?.vehicleColor] ? config.vehicleColor : DEFAULT_CONFIG.vehicleColor,
       vehicleScale: normalizeVehicleScale(config?.vehicleScale),
       sensorTapAction: config?.sensorTapAction === "none" ? "none" : "more-info",
+      sensorVisuals: config?.sensorVisuals && typeof config.sensorVisuals === "object" ? config.sensorVisuals : {},
       customSensors: Array.isArray(config?.customSensors)
         ? config.customSensors.filter(Boolean).map((sensor) => ({
             entity: typeof sensor.entity === "string" ? sensor.entity.trim() : "",
@@ -5585,6 +5671,7 @@ class TeslaPulseCardEditor extends HTMLElement {
             icon: typeof sensor.icon === "string" ? sensor.icon.trim().replace(/^mdi:/, "") : "",
             display: sensor.display === "state" ? "state" : "value",
             accent: CUSTOM_SENSOR_ACCENTS[sensor.accent] ? sensor.accent : "rose",
+            group: TELEMETRY_GROUPS[sensor.group] ? sensor.group : "environment",
           }))
         : [],
       quickActions: Array.isArray(config?.quickActions)
@@ -5702,7 +5789,8 @@ class TeslaPulseCardEditor extends HTMLElement {
         .scale-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
         .scale-control input[type="range"] { width: 100%; accent-color: var(--primary-color, #1688a8); }
         .scale-control output { min-width: 42px; color: var(--primary-text-color, #1f2522); font-size: 12px; font-weight: 800; text-align: right; }
-        .custom-sensor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 98px 104px auto; gap: 8px; align-items: end; }
+        .custom-sensor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 98px 104px 116px auto; gap: 8px; align-items: end; }
+        .sensor-visual { display: grid; grid-template-columns: minmax(0, 1fr) 98px 104px 92px; gap: 8px; align-items: end; padding-block: 8px; border-bottom: 1px solid var(--divider-color, #c7cfcb); }
         button.editor-button { min-height: 38px; padding: 0 12px; cursor: pointer; border: 1px solid var(--divider-color, #c7cfcb); border-radius: 6px; background: var(--card-background-color, #fff); color: var(--primary-text-color, #1f2522); font: inherit; font-weight: 700; }
         button.editor-button:hover { border-color: var(--primary-color, #1688a8); color: var(--primary-color, #1688a8); }
         @media (max-width: 680px) {
@@ -5802,6 +5890,17 @@ class TeslaPulseCardEditor extends HTMLElement {
         </div>
 
         <div class="field full">
+          <label>Built-in telemetry appearance</label>
+          <div class="field">
+            ${TELEMETRY_SENSOR_FIELDS.map(([, key, fallbackLabel]) => {
+              const visual = this._config.sensorVisuals[key] || {};
+              return `<div class="sensor-visual"><div class="field"><label for="sensor-visual-label-${key}">${fallbackLabel}</label><input id="sensor-visual-label-${key}" type="text" data-sensor-visual-label="${key}" value="${this._escape(visual.label || fallbackLabel)}" /></div><div class="field"><label for="sensor-visual-icon-${key}">Icon</label><input id="sensor-visual-icon-${key}" type="text" data-sensor-visual-icon="${key}" value="${this._escape(visual.icon || "")}" placeholder="flash" /></div><div class="field"><label for="sensor-visual-display-${key}">Text</label><select id="sensor-visual-display-${key}" data-sensor-visual-display="${key}"><option value="value" ${visual.display !== "state" ? "selected" : ""}>Value + unit</option><option value="state" ${visual.display === "state" ? "selected" : ""}>Raw state</option></select></div><div class="field"><label for="sensor-visual-accent-${key}">Accent</label><select id="sensor-visual-accent-${key}" data-sensor-visual-accent="${key}"><option value="" ${!visual.accent ? "selected" : ""}>Group</option>${Object.keys(CUSTOM_SENSOR_ACCENTS).map((accent) => `<option value="${accent}" ${visual.accent === accent ? "selected" : ""}>${accent}</option>`).join("")}</select></div></div>`;
+            }).join("")}
+          </div>
+          <p class="hint">Override the label, icon, text format, or accent for any existing telemetry row.</p>
+        </div>
+
+        <div class="field full">
           <label>Custom telemetry</label>
           <div class="field">
             ${this._config.customSensors.map((sensor, index) => `
@@ -5810,6 +5909,7 @@ class TeslaPulseCardEditor extends HTMLElement {
                 <div class="field"><label for="custom-sensor-entity-${index}">Entity</label><ha-entity-picker id="custom-sensor-entity-${index}" data-custom-sensor-entity="${index}" label="Entity"></ha-entity-picker></div>
                 <div class="field"><label for="custom-sensor-icon-${index}">Icon</label><input id="custom-sensor-icon-${index}" type="text" data-custom-sensor-icon="${index}" value="${this._escape(sensor.icon)}" placeholder="thermometer" /></div>
                 <div class="field"><label for="custom-sensor-display-${index}">Text</label><select id="custom-sensor-display-${index}" data-custom-sensor-display="${index}"><option value="value" ${sensor.display === "value" ? "selected" : ""}>Value + unit</option><option value="state" ${sensor.display === "state" ? "selected" : ""}>Raw state</option></select><label for="custom-sensor-accent-${index}">Accent</label><select id="custom-sensor-accent-${index}" data-custom-sensor-accent="${index}">${Object.keys(CUSTOM_SENSOR_ACCENTS).map((accent) => `<option value="${accent}" ${sensor.accent === accent ? "selected" : ""}>${accent}</option>`).join("")}</select></div>
+                <div class="field"><label for="custom-sensor-group-${index}">Group</label><select id="custom-sensor-group-${index}" data-custom-sensor-group="${index}">${Object.entries(TELEMETRY_GROUPS).map(([group, groupLabel]) => `<option value="${group}" ${sensor.group === group ? "selected" : ""}>${groupLabel}</option>`).join("")}</select></div>
                 <button class="editor-button" type="button" data-remove-custom-sensor="${index}" aria-label="Remove ${this._escape(sensor.label)}">Remove</button>
               </div>
             `).join("")}
@@ -5927,10 +6027,27 @@ class TeslaPulseCardEditor extends HTMLElement {
         this._updateCustomSensor(index, { icon: event.target.value.trim().replace(/^mdi:/, "") });
       });
     });
-    this.shadowRoot.querySelectorAll("select[data-custom-sensor-display], select[data-custom-sensor-accent]").forEach((select) => {
+    this.shadowRoot.querySelectorAll("input[data-sensor-visual-label], input[data-sensor-visual-icon]").forEach((input) => {
+      input.addEventListener("change", (event) => {
+        const key = event.target.dataset.sensorVisualLabel ?? event.target.dataset.sensorVisualIcon;
+        const visualKey = event.target.dataset.sensorVisualLabel !== undefined ? "label" : "icon";
+        const value = visualKey === "icon" ? event.target.value.trim().replace(/^mdi:/, "") : event.target.value.trim();
+        this._updateSensorVisual(key, { [visualKey]: value });
+      });
+    });
+    this.shadowRoot.querySelectorAll("select[data-sensor-visual-display], select[data-sensor-visual-accent]").forEach((select) => {
       select.addEventListener("change", (event) => {
-        const index = Number(event.target.dataset.customSensorDisplay ?? event.target.dataset.customSensorAccent);
-        const key = event.target.dataset.customSensorDisplay !== undefined ? "display" : "accent";
+        const key = event.target.dataset.sensorVisualDisplay ?? event.target.dataset.sensorVisualAccent;
+        const visualKey = event.target.dataset.sensorVisualDisplay !== undefined ? "display" : "accent";
+        this._updateSensorVisual(key, { [visualKey]: event.target.value });
+      });
+    });
+    this.shadowRoot.querySelectorAll("select[data-custom-sensor-display], select[data-custom-sensor-accent], select[data-custom-sensor-group]").forEach((select) => {
+      select.addEventListener("change", (event) => {
+        const index = Number(event.target.dataset.customSensorDisplay ?? event.target.dataset.customSensorAccent ?? event.target.dataset.customSensorGroup);
+        const key = event.target.dataset.customSensorDisplay !== undefined
+          ? "display"
+          : event.target.dataset.customSensorAccent !== undefined ? "accent" : "group";
         this._updateCustomSensor(index, { [key]: event.target.value });
       });
     });
@@ -5945,7 +6062,7 @@ class TeslaPulseCardEditor extends HTMLElement {
     this.shadowRoot.querySelector("[data-add-custom-sensor]")?.addEventListener("click", () => {
       this._emitConfig({
         ...this._config,
-        customSensors: [...this._config.customSensors, { entity: "", label: "Custom sensor", icon: "", display: "value", accent: "rose" }],
+        customSensors: [...this._config.customSensors, { entity: "", label: "Custom sensor", icon: "", display: "value", accent: "rose", group: "environment" }],
       });
     });
     this.shadowRoot.querySelectorAll("[data-remove-custom-sensor]").forEach((button) => {
@@ -6012,6 +6129,19 @@ class TeslaPulseCardEditor extends HTMLElement {
       ? { ...sensor, ...changes }
       : sensor);
     this._emitConfig({ ...this._config, customSensors });
+  }
+
+  _updateSensorVisual(key, changes) {
+    this._emitConfig({
+      ...this._config,
+      sensorVisuals: {
+        ...(this._config.sensorVisuals || {}),
+        [key]: {
+          ...(this._config.sensorVisuals?.[key] || {}),
+          ...changes,
+        },
+      },
+    });
   }
 
   _emitConfig(config) {

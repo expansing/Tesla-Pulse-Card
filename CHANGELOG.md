@@ -7,6 +7,21 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-07-31
+
+### Added
+
+- Add visual configuration for built-in telemetry labels, icons, text format,
+	and accent colors.
+- Allow custom telemetry to be placed in Environment, High voltage, or
+	Charging interface groups.
+
+### Fixed
+
+- Persist the final 3D vehicle orientation across dashboard refreshes in the
+	current browser session.
+- Move the energy-flow caption outside the energy rail boundary.
+
 ## [0.1.9] - 2026-07-31
 
 ### Added
