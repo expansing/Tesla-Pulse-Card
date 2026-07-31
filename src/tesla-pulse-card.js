@@ -992,20 +992,22 @@ class TeslaPulseCard extends HTMLElement {
       cybertruck.traverse((object) => {
         const materials = Array.isArray(object.material) ? object.material : [object.material];
         const objectName = (object.name || "").toLowerCase();
+        const wheelAssembly = /(hub|wheel|rim|caliper|disc)/.test(objectName);
         materials.forEach((material) => {
           if (!material) return;
           const materialName = material.name.toLowerCase();
           const paintableByName = (paintNameInclude.test(materialName) || paintNameInclude.test(objectName))
             && !paintNameExclude.test(materialName)
             && !paintNameExclude.test(objectName);
-          if (rimSurface.test(materialName) || rimSurface.test(objectName)) {
+          if ((rimSurface.test(materialName) || rimSurface.test(objectName) || wheelAssembly)
+            && !/(tire|rubber)/.test(materialName)) {
             material.map = null;
             material.emissiveMap = null;
-            material.color.set("#121418");
+            material.color.set("#000000");
             material.emissive.set("#000000");
             material.emissiveIntensity = 0;
-            material.metalness = 0.24;
-            material.roughness = 0.56;
+            material.metalness = 0.72;
+            material.roughness = 0.22;
             material.transparent = false;
             material.opacity = 1;
             material.depthWrite = true;
