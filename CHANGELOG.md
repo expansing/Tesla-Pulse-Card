@@ -7,6 +7,16 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-08-14
+
+### Added
+
+- Add a Battery health telemetry group with estimated SOH, SOH confidence, usable capacity, lifetime energy used, isolation resistance, cell balance, and brick voltage delta.
+
+### Fixed
+
+- Replace unstable native advanced-editor toggles with reliable accordion buttons.
+
 ## [0.1.21] - 2026-08-14
 
 ### Changed

@@ -139,6 +139,11 @@ frunk/trunk, defrost, lights, horn, and preconditioning. Home Assistant
 entities such as charge limit, target temperature, seat heaters, steering-wheel
 heat, and Windows open Home Assistant's native detail control.
 
+Tesla Vehicle Command battery diagnostics are shown in a dedicated **Battery
+health** group when available: estimated battery SOH, SOH confidence, estimated
+usable capacity, lifetime energy used, and isolation resistance. Each value is
+also available as an entity override in the advanced editor.
+
 The card includes an interactive WebGL Cybertruck digital twin with drag
 rotation and spatial frunk, trunk, lock, and climate controls. The included
 user-owned Cybertruck GLB is bundled into the card resource, so it does not

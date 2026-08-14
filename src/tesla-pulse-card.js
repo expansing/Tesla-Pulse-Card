@@ -21,6 +21,11 @@ const ENTITY_SUFFIXES = {
   vehicleAwake: "vehicle_awake_status",
   batteryBalance: "battery_balance_score",
   voltageImbalance: "brick_voltage_imbalance",
+  estimatedBatterySoh: "estimated_battery_soh",
+  batterySohConfidence: "battery_soh_confidence",
+  estimatedUsableCapacity: "estimated_usable_capacity",
+  lifetimeEnergyUsed: "lifetime_energy_used",
+  isolationResistance: "isolation_resistance",
   odometer: "odometer",
   energyRemaining: "energy_remaining",
   packVoltage: "pack_voltage",
@@ -152,6 +157,7 @@ const CUSTOM_SENSOR_ACCENTS = {
 
 const TELEMETRY_GROUPS = {
   environment: "Environment",
+  batteryHealth: "Battery health",
   highVoltage: "High voltage",
   charging: "Charging interface",
 };
@@ -161,11 +167,16 @@ const TELEMETRY_SENSOR_FIELDS = [
   ["environment", "outsideTemperature", "Outside"],
   ["environment", "odometer", "Odometer"],
   ["environment", "energyRemaining", "Energy remaining"],
+  ["batteryHealth", "estimatedBatterySoh", "Battery SOH"],
+  ["batteryHealth", "batterySohConfidence", "SOH confidence"],
+  ["batteryHealth", "estimatedUsableCapacity", "Usable capacity"],
+  ["batteryHealth", "lifetimeEnergyUsed", "Lifetime energy used"],
+  ["batteryHealth", "isolationResistance", "Isolation resistance"],
+  ["batteryHealth", "batteryBalance", "Balance"],
+  ["batteryHealth", "voltageImbalance", "Brick delta"],
   ["highVoltage", "packVoltage", "Pack voltage"],
   ["highVoltage", "packCurrent", "Pack current"],
   ["highVoltage", "batteryHeater", "Battery heater"],
-  ["highVoltage", "batteryBalance", "Balance"],
-  ["highVoltage", "voltageImbalance", "Brick delta"],
   ["charging", "chargePower", "Charge power"],
   ["charging", "chargeCurrent", "Charge current"],
   ["charging", "chargerVoltage", "Charger voltage"],
@@ -1696,6 +1707,7 @@ class TeslaPulseCard extends HTMLElement {
         .system-group { position: relative; display: grid; grid-template-columns: 1fr; gap: 0; min-width: 0; padding: 0; border: 0; border-top: 2px solid var(--system-accent, var(--ice)); border-radius: 0; background: transparent; color: var(--tone-text); }
         .system-group::before { display: none; }
         .system-environment { --system-accent: #62e6a7; }
+        .system-battery-health { --system-accent: #ff8f70; }
         .system-high-voltage { --system-accent: #ffb85c; }
         .system-charging { --system-accent: #a9efff; }
         .system-custom { --system-accent: #ff8f70; }
@@ -1794,6 +1806,7 @@ class TeslaPulseCard extends HTMLElement {
             <div class="section-heading"><h2>Telemetry lattice</h2><span class="status-label">Useful systems / live</span></div>
             <div class="systems-grid">
               <div class="system-group system-environment"><h3 class="system-title"><ha-icon icon="mdi:home-thermometer-outline"></ha-icon>Environment</h3>${TELEMETRY_SENSOR_FIELDS.filter(([group]) => group === "environment").map(([, key, label]) => this._systemRow(label, key)).join("")}${this._config.customSensors.map((sensor, index) => sensor.group === "environment" ? this._customSensorRow(sensor, index) : "").join("")}</div>
+              <div class="system-group system-battery-health"><h3 class="system-title"><ha-icon icon="mdi:battery-heart"></ha-icon>Battery health</h3>${TELEMETRY_SENSOR_FIELDS.filter(([group]) => group === "batteryHealth").map(([, key, label]) => this._systemRow(label, key)).join("")}${this._config.customSensors.map((sensor, index) => sensor.group === "batteryHealth" ? this._customSensorRow(sensor, index) : "").join("")}</div>
               <div class="system-group system-high-voltage"><h3 class="system-title"><ha-icon icon="mdi:flash"></ha-icon>High voltage</h3>${TELEMETRY_SENSOR_FIELDS.filter(([group]) => group === "highVoltage").map(([, key, label]) => this._systemRow(label, key)).join("")}${this._config.customSensors.map((sensor, index) => sensor.group === "highVoltage" ? this._customSensorRow(sensor, index) : "").join("")}</div>
               <div class="system-group system-charging"><h3 class="system-title"><ha-icon icon="mdi:ev-station"></ha-icon>Charging interface</h3>${TELEMETRY_SENSOR_FIELDS.filter(([group]) => group === "charging").map(([, key, label]) => this._systemRow(label, key)).join("")}${this._config.customSensors.map((sensor, index) => sensor.group === "charging" ? this._customSensorRow(sensor, index) : "").join("")}</div>
             </div>
@@ -1993,6 +2006,11 @@ const EDITOR_SENSOR_FIELDS = [
   ["outsideTemperature", "Outside temperature"],
   ["batteryBalance", "Battery balance"],
   ["voltageImbalance", "Voltage imbalance"],
+  ["estimatedBatterySoh", "Battery SOH"],
+  ["batterySohConfidence", "SOH confidence"],
+  ["estimatedUsableCapacity", "Usable capacity"],
+  ["lifetimeEnergyUsed", "Lifetime energy used"],
+  ["isolationResistance", "Isolation resistance"],
   ["odometer", "Odometer"],
   ["energyRemaining", "Energy remaining"],
   ["packVoltage", "Pack voltage"],
@@ -2161,9 +2179,11 @@ class TeslaPulseCardEditor extends HTMLElement {
           font-size: 12px;
           color: var(--secondary-text-color, #68716c);
         }
-        details.editor-section { border: 1px solid var(--divider-color, #c7cfcb); border-radius: 6px; background: color-mix(in srgb, var(--card-background-color, #fff) 96%, var(--primary-color, #1688a8)); }
-        details.editor-section summary { min-height: 42px; padding: 0 12px; cursor: pointer; color: var(--primary-text-color, #1f2522); font-size: 13px; font-weight: 750; line-height: 42px; }
-        details.editor-section[open] summary { border-bottom: 1px solid var(--divider-color, #c7cfcb); }
+        .editor-section { overflow: hidden; border: 1px solid var(--divider-color, #c7cfcb); border-radius: 6px; background: color-mix(in srgb, var(--card-background-color, #fff) 96%, var(--primary-color, #1688a8)); }
+        .editor-section-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 42px; padding: 0 12px; border: 0; background: transparent; color: var(--primary-text-color, #1f2522); cursor: pointer; font: inherit; font-size: 13px; font-weight: 750; text-align: left; }
+        .editor-section-toggle::after { content: "+"; color: var(--secondary-text-color, #68716c); font-size: 18px; font-weight: 400; }
+        .editor-section.is-open .editor-section-toggle { border-bottom: 1px solid var(--divider-color, #c7cfcb); }
+        .editor-section.is-open .editor-section-toggle::after { content: "-"; }
         .section-body { display: grid; gap: 14px; padding: 14px 12px; }
         .check-grid {
           display: grid;
@@ -2233,8 +2253,8 @@ class TeslaPulseCardEditor extends HTMLElement {
           </div>
         </div>
 
-        <details class="editor-section" data-editor-section="appearance" ${this._editorSectionOpen("appearance") ? "open" : ""}>
-          <summary>Appearance and interaction</summary>
+        <section class="editor-section ${this._editorSectionOpen("appearance") ? "is-open" : ""}" data-editor-section="appearance">
+          <button class="editor-section-toggle" type="button" data-editor-section-toggle="appearance" aria-expanded="${this._editorSectionOpen("appearance")}">Appearance and interaction</button>
           ${this._editorSectionOpen("appearance") ? `<div class="section-body">` : ""}
         <div class="field">
           <label for="vehicle-model-url">Custom vehicle model URL</label>
@@ -2268,10 +2288,10 @@ class TeslaPulseCardEditor extends HTMLElement {
           </div>
         </div>
           ${this._editorSectionOpen("appearance") ? "</div>" : ""}
-        </details>
+        </section>
 
-        <details class="editor-section" data-editor-section="controls" ${this._editorSectionOpen("controls") ? "open" : ""}>
-          <summary>Controls and layout</summary>
+        <section class="editor-section ${this._editorSectionOpen("controls") ? "is-open" : ""}" data-editor-section="controls">
+          <button class="editor-section-toggle" type="button" data-editor-section-toggle="controls" aria-expanded="${this._editorSectionOpen("controls")}">Controls and layout</button>
           ${this._editorSectionOpen("controls") ? `<div class="section-body">` : ""}
         <div class="field">
           <label for="entity-mode">Entity source</label>
@@ -2308,10 +2328,10 @@ class TeslaPulseCardEditor extends HTMLElement {
           <p class="hint">Lock, climate, frunk, and trunk controls live directly on the vehicle stage.</p>
         </div>
           ${this._editorSectionOpen("controls") ? "</div>" : ""}
-        </details>
+        </section>
 
-        <details class="editor-section" data-editor-section="entities" ${this._editorSectionOpen("entities") ? "open" : ""}>
-          <summary>Entity overrides and telemetry</summary>
+        <section class="editor-section ${this._editorSectionOpen("entities") ? "is-open" : ""}" data-editor-section="entities">
+          <button class="editor-section-toggle" type="button" data-editor-section-toggle="entities" aria-expanded="${this._editorSectionOpen("entities")}">Entity overrides and telemetry</button>
           ${this._editorSectionOpen("entities") ? `<div class="section-body">` : ""}
         <div class="field">
           <label>Sensor entities</label>
@@ -2366,21 +2386,24 @@ class TeslaPulseCardEditor extends HTMLElement {
           </div>
         </div>
           ${this._editorSectionOpen("entities") ? "</div>" : ""}
-        </details>
+        </section>
 
         <p class="hint">Select any sensor or command entity from Home Assistant. Automatic mode uses Tesla Pulse suffixes for fields left empty; manual mode uses only the selections made here.</p>
       </section>
     `;
 
-    this.shadowRoot.querySelectorAll("details[data-editor-section]").forEach((section) => {
+    this.shadowRoot.querySelectorAll("[data-editor-section]").forEach((section) => {
       const key = section.dataset.editorSection;
       if (!this._editorSectionOpen(key)) {
-        [...section.children].filter((child) => child.tagName !== "SUMMARY").forEach((child) => child.remove());
+        [...section.children].filter((child) => !child.matches("[data-editor-section-toggle]")).forEach((child) => child.remove());
       }
-      section.addEventListener("toggle", () => {
+    });
+    this.shadowRoot.querySelectorAll("[data-editor-section-toggle]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const key = button.dataset.editorSectionToggle;
         const expanded = this._expandedEditorSections || new Set();
-        if (section.open) expanded.add(key);
-        else expanded.delete(key);
+        if (expanded.has(key)) expanded.delete(key);
+        else expanded.add(key);
         this._expandedEditorSections = expanded;
         this._render();
       });
