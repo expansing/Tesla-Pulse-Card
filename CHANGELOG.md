@@ -7,6 +7,17 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-08-14
+
+### Added
+
+- Support standard Home Assistant card configuration for the primary entity, header visibility, background actions, grid options, and visual action editing.
+- Add automatic aliases for current Tesla Vehicle Command preconditioning and heater entities.
+
+### Fixed
+
+- Dispose card rendering resources correctly when Home Assistant removes and reconnects a card instance.
+
 ## [0.1.19] - 2026-07-31
 
 ### Fixed
