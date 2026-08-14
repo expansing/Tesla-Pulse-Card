@@ -2048,6 +2048,10 @@ const EDITOR_DISPLAY_FIELDS = [
 ];
 
 class TeslaPulseCardEditor extends HTMLElement {
+  _editorSectionOpen(section) {
+    return this._expandedEditorSections?.has(section);
+  }
+
   setConfig(config) {
     this._config = {
       ...DEFAULT_CONFIG,
@@ -2102,7 +2106,7 @@ class TeslaPulseCardEditor extends HTMLElement {
         :host { display: block; }
         .editor {
           display: grid;
-          gap: 14px;
+          gap: 12px;
           padding: 16px;
           border: 1px solid var(--divider-color, #c7cfcb);
           border-radius: 8px;
@@ -2157,6 +2161,10 @@ class TeslaPulseCardEditor extends HTMLElement {
           font-size: 12px;
           color: var(--secondary-text-color, #68716c);
         }
+        details.editor-section { border: 1px solid var(--divider-color, #c7cfcb); border-radius: 6px; background: color-mix(in srgb, var(--card-background-color, #fff) 96%, var(--primary-color, #1688a8)); }
+        details.editor-section summary { min-height: 42px; padding: 0 12px; cursor: pointer; color: var(--primary-text-color, #1f2522); font-size: 13px; font-weight: 750; line-height: 42px; }
+        details.editor-section[open] summary { border-bottom: 1px solid var(--divider-color, #c7cfcb); }
+        .section-body { display: grid; gap: 14px; padding: 14px 12px; }
         .check-grid {
           display: grid;
           gap: 8px;
@@ -2175,16 +2183,7 @@ class TeslaPulseCardEditor extends HTMLElement {
         .segment span { display: grid; min-height: 38px; place-items: center; padding: 0 10px; cursor: pointer; color: var(--secondary-text-color, #68716c); background: var(--card-background-color, #fff); font-size: 12px; font-weight: 700; }
         .segment input:checked + span { color: var(--text-primary-color, #fff); background: var(--primary-color, #1688a8); }
         .segment input:focus-visible + span { outline: 2px solid var(--primary-color, #1688a8); outline-offset: -2px; }
-        .color-picker { display: flex; flex-wrap: wrap; gap: 10px; }
-        .color-group + .color-group { margin-top: 12px; }
-        .color-group-label { display: block; margin-bottom: 6px; color: var(--secondary-text-color, #68716c); font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
-        .color-choice { position: relative; }
-        .color-choice input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-        .color-choice span { display: block; width: 30px; height: 30px; cursor: pointer; border: 1px solid var(--divider-color, #c7cfcb); border-radius: 50%; }
-        .color-choice span.swatch-gloss { box-shadow: inset 0 3px 5px rgba(255, 255, 255, 0.4), inset -3px -5px 7px rgba(0, 0, 0, 0.35); }
-        .color-choice span.swatch-matte { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.22); filter: saturate(0.85); }
-        .color-choice input:checked + span { outline: 2px solid var(--primary-color, #1688a8); outline-offset: 3px; }
-        .color-choice input:focus-visible + span { outline: 2px solid var(--primary-color, #1688a8); outline-offset: 3px; }
+        select { width: 100%; min-height: 38px; padding: 0 8px; border: 1px solid var(--divider-color, #c7cfcb); border-radius: 6px; background: var(--card-background-color, #fff); color: var(--primary-text-color, #1f2522); font: inherit; }
         .scale-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
         .scale-control input[type="range"] { width: 100%; accent-color: var(--primary-color, #1688a8); }
         .scale-control output { min-width: 42px; color: var(--primary-text-color, #1f2522); font-size: 12px; font-weight: 800; text-align: right; }
@@ -2200,10 +2199,15 @@ class TeslaPulseCardEditor extends HTMLElement {
       </style>
       <section class="editor">
         <h3>Tesla Pulse Card</h3>
+        <p class="hint">Start with your vehicle, appearance, and the controls you use most. Entity overrides and telemetry are available below when needed.</p>
         <div class="grid">
           <div class="field full">
-            <label for="title">Card title</label>
+            <label for="title">Vehicle name</label>
             <input id="title" type="text" data-key="title" value="${this._escape(this._config.title || "")}" />
+          </div>
+          <div class="field full">
+            <label for="entity-battery">Primary battery entity</label>
+            <ha-entity-picker id="entity-battery" data-entity-key="battery" label="Primary battery entity"></ha-entity-picker>
           </div>
           <div class="field">
             <label for="card-icon">Vehicle icon</label>
@@ -2217,30 +2221,27 @@ class TeslaPulseCardEditor extends HTMLElement {
               <label class="toggle"><input type="checkbox" data-card-visibility-key="showState" ${this._config.showState ? "checked" : ""} /> State</label>
             </div>
           </div>
-          <div class="field full">
-            <label for="vehicle-model-url">Cybertruck model URL override</label>
-            <input id="vehicle-model-url" type="text" data-key="vehicleModelUrl" value="${this._escape(this._config.vehicleModelUrl || "")}" placeholder="Use bundled Cybertruck model" />
-          </div>
-          <div class="field full">
+          <div class="field">
             <label>Vehicle color</label>
-            ${["gloss", "matte"].map((finishKey) => `
-              <div class="color-group">
-                <span class="color-group-label">${finishKey === "gloss" ? "Glossy" : "Matte"}</span>
-                <div class="color-picker" role="radiogroup" aria-label="Cybertruck ${finishKey} exterior color">
-                  ${Object.entries(VEHICLE_COLORS).filter(([, color]) => (color.finish || "gloss") === finishKey).map(([key, color]) => `
-                    <label class="color-choice"><input type="radio" name="vehicle-color" data-key="vehicleColor" value="${key}" aria-label="${color.label}" ${this._config.vehicleColor === key ? "checked" : ""} /><span class="swatch-${finishKey}" style="background: ${color.hex}" title="${color.label}"></span></label>
-                  `).join("")}
-                </div>
-              </div>
-            `).join("")}
+            <select data-key="vehicleColor" aria-label="Vehicle color">
+              ${["gloss", "matte"].map((finishKey) => `<optgroup label="${finishKey === "gloss" ? "Glossy finishes" : "Matte finishes"}">${Object.entries(VEHICLE_COLORS).filter(([, color]) => (color.finish || "gloss") === finishKey).map(([key, color]) => `<option value="${key}" ${this._config.vehicleColor === key ? "selected" : ""}>${color.label}</option>`).join("")}</optgroup>`).join("")}
+            </select>
           </div>
-          <div class="field full">
+          <div class="field">
             <label for="vehicle-scale">Vehicle scale</label>
             <div class="scale-control"><input id="vehicle-scale" type="range" min="0.75" max="1.2" step="0.05" data-key="vehicleScale" value="${this._config.vehicleScale}" aria-label="Vehicle scale" /><output for="vehicle-scale">${Math.round(this._config.vehicleScale * 100)}%</output></div>
           </div>
         </div>
 
-        <div class="field full">
+        <details class="editor-section" data-editor-section="appearance" ${this._editorSectionOpen("appearance") ? "open" : ""}>
+          <summary>Appearance and interaction</summary>
+          ${this._editorSectionOpen("appearance") ? `<div class="section-body">` : ""}
+        <div class="field">
+          <label for="vehicle-model-url">Custom vehicle model URL</label>
+          <input id="vehicle-model-url" type="text" data-key="vehicleModelUrl" value="${this._escape(this._config.vehicleModelUrl || "")}" placeholder="Use the bundled vehicle model" />
+          <p class="hint">Leave blank to use the bundled model.</p>
+        </div>
+        <div class="field">
           <label>Appearance</label>
           <div class="segmented" role="radiogroup" aria-label="Card appearance">
             ${[["auto", "Auto"], ["black", "Black"], ["white", "White"]].map(([value, label]) => `
@@ -2266,8 +2267,13 @@ class TeslaPulseCardEditor extends HTMLElement {
             <div class="field"><label for="double-tap-action">Double tap</label><hui-action-editor id="double-tap-action" data-card-action-key="doubleTapAction"></hui-action-editor></div>
           </div>
         </div>
+          ${this._editorSectionOpen("appearance") ? "</div>" : ""}
+        </details>
 
-        <div class="field full">
+        <details class="editor-section" data-editor-section="controls" ${this._editorSectionOpen("controls") ? "open" : ""}>
+          <summary>Controls and layout</summary>
+          ${this._editorSectionOpen("controls") ? `<div class="section-body">` : ""}
+        <div class="field">
           <label for="entity-mode">Entity source</label>
           <select id="entity-mode" data-key="entityMode">
             <option value="auto" ${this._config.entityMode === "auto" ? "selected" : ""}>Automatically detect Tesla Pulse entities</option>
@@ -2301,8 +2307,13 @@ class TeslaPulseCardEditor extends HTMLElement {
           </div>
           <p class="hint">Lock, climate, frunk, and trunk controls live directly on the vehicle stage.</p>
         </div>
+          ${this._editorSectionOpen("controls") ? "</div>" : ""}
+        </details>
 
-        <div class="field full">
+        <details class="editor-section" data-editor-section="entities" ${this._editorSectionOpen("entities") ? "open" : ""}>
+          <summary>Entity overrides and telemetry</summary>
+          ${this._editorSectionOpen("entities") ? `<div class="section-body">` : ""}
+        <div class="field">
           <label>Sensor entities</label>
           <div class="grid">
             ${EDITOR_SENSOR_FIELDS.map(([key, label]) => `
@@ -2354,10 +2365,26 @@ class TeslaPulseCardEditor extends HTMLElement {
             `).join("")}
           </div>
         </div>
+          ${this._editorSectionOpen("entities") ? "</div>" : ""}
+        </details>
 
         <p class="hint">Select any sensor or command entity from Home Assistant. Automatic mode uses Tesla Pulse suffixes for fields left empty; manual mode uses only the selections made here.</p>
       </section>
     `;
+
+    this.shadowRoot.querySelectorAll("details[data-editor-section]").forEach((section) => {
+      const key = section.dataset.editorSection;
+      if (!this._editorSectionOpen(key)) {
+        [...section.children].filter((child) => child.tagName !== "SUMMARY").forEach((child) => child.remove());
+      }
+      section.addEventListener("toggle", () => {
+        const expanded = this._expandedEditorSections || new Set();
+        if (section.open) expanded.add(key);
+        else expanded.delete(key);
+        this._expandedEditorSections = expanded;
+        this._render();
+      });
+    });
 
     this._syncEntityPickers();
 

@@ -7,6 +7,13 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-08-14
+
+### Changed
+
+- Redesign the visual editor around an entity-first setup flow with a native grouped vehicle-color selector.
+- Move appearance, controls, entity overrides, and telemetry into lazy-loaded advanced sections so the default editor stays fast and focused.
+
 ## [0.1.20] - 2026-08-14
 
 ### Added
