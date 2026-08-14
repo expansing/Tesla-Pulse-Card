@@ -48,7 +48,12 @@ Configuration works in both places:
 
 ```yaml
 type: custom:tesla-pulse-card
-title: Juniper
+name: Juniper
+icon: car-electric
+show_name: true
+show_icon: true
+show_state: true
+entity: sensor.juniper_battery_level
 entityMode: manual
 themeMode: auto
 vehicleColor: red
@@ -94,12 +99,36 @@ display:
   showStatus: true
   showControls: true
   showHealth: true
+tap_action:
+  action: more-info
+hold_action:
+  action: none
+double_tap_action:
+  action: none
 ```
 
 By default, `entityMode` is `auto`: the card resolves Tesla Pulse entities by
 their stable unique-ID suffix and accepts individual `entities` overrides. Set
 `entityMode: manual` to disable auto-detection and use only entities you select
 in the visual editor or declare under `entities`.
+
+## Card Schema
+
+`type` is always `custom:tesla-pulse-card`. Use `entity` for the primary battery
+entity, or use `entities` for precise per-value overrides; an explicit
+`entities.battery` override takes precedence over `entity`. `name` is the
+standard Home Assistant title override; `title` remains supported for existing
+dashboards. `icon`, `show_name`, `show_icon`, and `show_state` control the card
+header independently.
+
+The card supports standard Home Assistant action objects on its non-control
+background: `tap_action`, `hold_action`, and `double_tap_action`. Supported
+actions are `more-info`, `toggle`, `call-service`, `navigate`, `url`, and
+`none`. Existing vehicle buttons keep their dedicated safety confirmations and
+are not intercepted by these background actions.
+
+For sections dashboards, the card advertises a responsive grid size of 3-12
+columns and 5-7 rows through Home Assistant `getGridOptions()`.
 
 The systems matrix focuses on useful at-a-glance data: odometer, remaining
 energy, battery heater, pack voltage/current, charging input, cable/latch
@@ -118,8 +147,9 @@ lets you replace the bundled model with a local Home Assistant URL. Spatial
 controls appear only when their corresponding Home Assistant entity is
 configured or detected.
 
-Set `vehicleColor` to `factory`, `black`, `white`, `red`, `blue`, or `gray`.
-The visual editor provides the same choices as color swatches.
+Set `vehicleColor` to any glossy or matte preset provided by the visual editor.
+The card supplies factory, black, white, red, blue, gray, silver, green, and
+orange glossy finishes plus matte black, white, gray, blue, green, and red.
 
 Set `vehicleScale` between `0.75` and `1.2` to resize the Cybertruck. The
 spatial vehicle controls are recalculated for the selected size. The angle set

@@ -45,18 +45,26 @@ const ENTITY_SUFFIXES = {
   closeChargePort: "close_charge_port",
   ventWindows: "vent_windows",
   closeWindows: "close_windows",
-  startPreconditioning: "start_battery_preconditioning",
-  stopPreconditioning: "stop_battery_preconditioning",
+  startPreconditioning: ["preconditioning_start", "start_battery_preconditioning"],
+  stopPreconditioning: ["preconditioning_stop", "stop_battery_preconditioning"],
   targetTemperature: "target_temperature",
-  frontLeftSeatHeater: "front_left_seat_heater",
-  frontRightSeatHeater: "front_right_seat_heater",
-  rearLeftSeatHeater: "rear_left_seat_heater",
-  rearRightSeatHeater: "rear_right_seat_heater",
-  steeringWheelHeater: "steering_wheel_heater",
+  frontLeftSeatHeater: ["seat_heater_0", "front_left_seat_heater"],
+  frontRightSeatHeater: ["seat_heater_1", "front_right_seat_heater"],
+  rearLeftSeatHeater: ["seat_heater_2", "rear_left_seat_heater"],
+  rearRightSeatHeater: ["seat_heater_3", "rear_right_seat_heater"],
+  steeringWheelHeater: ["steering_heater", "steering_wheel_heater"],
 };
 
 const DEFAULT_CONFIG = {
   title: "Tesla",
+  name: "",
+  icon: "car-electric",
+  showName: true,
+  showIcon: true,
+  showState: true,
+  tapAction: { action: "more-info" },
+  holdAction: { action: "none" },
+  doubleTapAction: { action: "none" },
   entities: {},
   entityMode: "auto",
   themeMode: "auto",
@@ -174,14 +182,22 @@ const normalizeVehicleScale = (value) => {
   return Math.min(1.2, Math.max(0.75, scale));
 };
 
+const normalizeCardAction = (action, fallback) => {
+  const value = action && typeof action === "object" ? action : fallback;
+  const supported = new Set(["more-info", "toggle", "call-service", "navigate", "url", "none"]);
+  return supported.has(value.action) ? value : fallback;
+};
+
 class TeslaPulseCard extends HTMLElement {
   static async getConfigElement() {
     return document.createElement("tesla-pulse-card-editor");
   }
 
-  static getStubConfig() {
+  static getStubConfig(hass) {
+    const primaryEntity = Object.keys(hass?.states || {}).find((entityId) => entityId.endsWith("_battery_level"));
     return {
       title: "Tesla",
+      ...(primaryEntity ? { entity: primaryEntity, entities: { battery: primaryEntity } } : {}),
       themeMode: "auto",
       quickActions: [...DEFAULT_CONFIG.quickActions],
       display: { ...DEFAULT_CONFIG.display },
@@ -197,10 +213,31 @@ class TeslaPulseCard extends HTMLElement {
       throw new Error("Tesla Pulse Card requires a configuration object.");
     }
 
+    const primaryEntity = typeof config.entity === "string" && config.entity.trim() ? config.entity.trim() : "";
     const nextConfig = {
       ...DEFAULT_CONFIG,
       ...config,
-      entities: { ...DEFAULT_CONFIG.entities, ...(config.entities || {}) },
+      title: typeof config.name === "string" && config.name.trim()
+        ? config.name.trim()
+        : typeof config.title === "string" && config.title.trim()
+          ? config.title.trim()
+          : DEFAULT_CONFIG.title,
+      name: typeof config.name === "string" ? config.name.trim() : "",
+      icon: typeof config.icon === "string" && config.icon.trim()
+        ? config.icon.trim().replace(/^mdi:/, "")
+        : DEFAULT_CONFIG.icon,
+      showName: (config.showName ?? config.show_name) !== false,
+      showIcon: (config.showIcon ?? config.show_icon) !== false,
+      showState: (config.showState ?? config.show_state) !== false,
+      tapAction: normalizeCardAction(config.tapAction ?? config.tap_action, DEFAULT_CONFIG.tapAction),
+      holdAction: normalizeCardAction(config.holdAction ?? config.hold_action, DEFAULT_CONFIG.holdAction),
+      doubleTapAction: normalizeCardAction(config.doubleTapAction ?? config.double_tap_action, DEFAULT_CONFIG.doubleTapAction),
+      entity: primaryEntity,
+      entities: {
+        ...DEFAULT_CONFIG.entities,
+        ...(primaryEntity && !config.entities?.battery ? { battery: primaryEntity } : {}),
+        ...(config.entities || {}),
+      },
       themeMode: ["black", "white"].includes(config.themeMode) ? config.themeMode : "auto",
       vehicleColor: VEHICLE_COLORS[config.vehicleColor] ? config.vehicleColor : DEFAULT_CONFIG.vehicleColor,
       vehicleScale: normalizeVehicleScale(config.vehicleScale),
@@ -246,8 +283,28 @@ class TeslaPulseCard extends HTMLElement {
     this._refreshLiveContent();
   }
 
+  disconnectedCallback() {
+    clearTimeout(this._renderDebounceTimer);
+    clearTimeout(this._vehicleInitTimer);
+    clearTimeout(this._spatialRecheckTimer);
+    this._renderDebounceTimer = undefined;
+    this._vehicleInitTimer = undefined;
+    this._spatialRecheckTimer = undefined;
+    this._disposeVehicleScene();
+    this._isRendered = false;
+    if (this.shadowRoot) this.shadowRoot.innerHTML = "";
+  }
+
+  connectedCallback() {
+    if (this._config && !this._isRendered) this._render();
+  }
+
   getCardSize() {
     return 7;
+  }
+
+  getGridOptions() {
+    return { columns: 6, min_columns: 3, max_columns: 12, rows: 7, min_rows: 5 };
   }
 
   _inEditMode() {
@@ -415,6 +472,44 @@ class TeslaPulseCard extends HTMLElement {
 
   _value(key, fallback = "Unavailable") {
     return this._formatStateValue(this._state(key), fallback);
+  }
+
+  _primaryEntityId() {
+    return this._config.entity || this._entityId("battery");
+  }
+
+  _executeCardAction(action) {
+    if (!action || action.action === "none") return;
+    const entityId = action.entity || this._primaryEntityId();
+
+    if (action.action === "more-info") {
+      if (!entityId) return;
+      this.dispatchEvent(new CustomEvent("hass-more-info", {
+        detail: { entityId }, bubbles: true, composed: true,
+      }));
+      return;
+    }
+
+    if (action.action === "toggle") {
+      if (entityId) this._hass?.callService?.("homeassistant", "toggle", { entity_id: entityId });
+      return;
+    }
+
+    if (action.action === "call-service") {
+      const [domain, service] = String(action.service || "").split(".");
+      if (domain && service) this._hass?.callService?.(domain, service, action.data || {});
+      return;
+    }
+
+    if (action.action === "navigate" && action.navigation_path) {
+      history.pushState(null, "", action.navigation_path);
+      window.dispatchEvent(new CustomEvent("location-changed", { bubbles: true, composed: true }));
+      return;
+    }
+
+    if (action.action === "url" && action.url_path) {
+      window.open(action.url_path, action.new_tab === false ? "_self" : "_blank", "noopener");
+    }
   }
 
   _formattedVoltageImbalance() {
@@ -1516,6 +1611,8 @@ class TeslaPulseCard extends HTMLElement {
         .cockpit.no-stage { min-height: 96px; }
         .cockpit.no-stage::before { display: none; }
         .cockpit .topline { position: relative; z-index: 4; padding: 22px 24px 0; }
+        .vehicle-title { display: flex; align-items: center; gap: 8px; }
+        .vehicle-title ha-icon { width: 21px; height: 21px; color: var(--ice); }
         .cockpit .eyebrow { color: var(--ice); }
         .cockpit h1 { color: var(--tone-text); font-size: 25px; font-weight: 650; }
         .cockpit .telemetry { color: var(--tone-muted); }
@@ -1658,11 +1755,11 @@ class TeslaPulseCard extends HTMLElement {
           .systems-grid { grid-template-columns: 1fr; }
         }
       </style>
-      <article class="card theme-${resolvedThemeMode} ${display.compact ? "compact" : ""}" aria-label="${this._escape(this._config.title)} dashboard">
+      <article class="card theme-${resolvedThemeMode} ${display.compact ? "compact" : ""}" aria-label="${this._escape(this._config.title)} dashboard" data-card-action-surface>
         <section class="cockpit ${display.showHero ? "" : "no-stage"}">
           <header class="topline">
-            <div><span class="eyebrow">Tesla Pulse / Vehicle link</span><h1>${this._escape(this._config.title)}</h1></div>
-            <div class="header-status">
+            <div><span class="eyebrow">Tesla Pulse / Vehicle link</span><div class="vehicle-title" ${this._config.showName || this._config.showIcon ? "" : "hidden"}>${this._config.showIcon ? `<ha-icon icon="mdi:${this._escape(this._config.icon)}"></ha-icon>` : ""}${this._config.showName ? `<h1>${this._escape(this._config.title)}</h1>` : ""}</div></div>
+            <div class="header-status" ${this._config.showState ? "" : "hidden"}>
               <span class="awake-state ${awakeStatus.active ? "is-awake" : ""}"><i></i>${awakeStatus.label}</span>
               <div class="telemetry ${telemetry.state}"><span class="telemetry-label">${telemetry.label}</span><span>${telemetry.detail}</span></div>
             </div>
@@ -1750,6 +1847,40 @@ class TeslaPulseCard extends HTMLElement {
         this._pendingAction = undefined;
         this._render();
       });
+    });
+
+    const cardSurface = this.shadowRoot.querySelector("[data-card-action-surface]");
+    if (!cardSurface) return;
+
+    let holdTimer;
+    let holdHandled = false;
+    let tapTimer;
+    const isCardBackground = (event) => !event.target.closest("button, a, input, select, textarea, ha-entity-picker");
+    const clearHold = () => {
+      clearTimeout(holdTimer);
+      holdTimer = undefined;
+    };
+
+    cardSurface.addEventListener("pointerdown", (event) => {
+      if (!isCardBackground(event)) return;
+      holdHandled = false;
+      clearHold();
+      holdTimer = setTimeout(() => {
+        holdHandled = true;
+        this._executeCardAction(this._config.holdAction);
+      }, 500);
+    });
+    cardSurface.addEventListener("pointerup", clearHold);
+    cardSurface.addEventListener("pointercancel", clearHold);
+    cardSurface.addEventListener("click", (event) => {
+      if (!isCardBackground(event) || holdHandled) return;
+      clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => this._executeCardAction(this._config.tapAction), 240);
+    });
+    cardSurface.addEventListener("dblclick", (event) => {
+      if (!isCardBackground(event)) return;
+      clearTimeout(tapTimer);
+      this._executeCardAction(this._config.doubleTapAction);
     });
   }
 
@@ -2074,6 +2205,18 @@ class TeslaPulseCardEditor extends HTMLElement {
             <label for="title">Card title</label>
             <input id="title" type="text" data-key="title" value="${this._escape(this._config.title || "")}" />
           </div>
+          <div class="field">
+            <label for="card-icon">Vehicle icon</label>
+            <input id="card-icon" type="text" data-key="icon" value="${this._escape(this._config.icon || "")}" placeholder="car-electric" />
+          </div>
+          <div class="field">
+            <label>Header visibility</label>
+            <div class="toggle-row">
+              <label class="toggle"><input type="checkbox" data-card-visibility-key="showName" ${this._config.showName ? "checked" : ""} /> Name</label>
+              <label class="toggle"><input type="checkbox" data-card-visibility-key="showIcon" ${this._config.showIcon ? "checked" : ""} /> Icon</label>
+              <label class="toggle"><input type="checkbox" data-card-visibility-key="showState" ${this._config.showState ? "checked" : ""} /> State</label>
+            </div>
+          </div>
           <div class="field full">
             <label for="vehicle-model-url">Cybertruck model URL override</label>
             <input id="vehicle-model-url" type="text" data-key="vehicleModelUrl" value="${this._escape(this._config.vehicleModelUrl || "")}" placeholder="Use bundled Cybertruck model" />
@@ -2112,6 +2255,15 @@ class TeslaPulseCardEditor extends HTMLElement {
             ${[["more-info", "Open detail"], ["none", "No action"]].map(([value, label]) => `
               <label class="segment"><input type="radio" name="sensor-tap-action" data-sensor-tap-action value="${value}" ${this._config.sensorTapAction === value ? "checked" : ""} /><span>${label}</span></label>
             `).join("")}
+          </div>
+        </div>
+
+        <div class="field full">
+          <label>Card actions</label>
+          <div class="grid">
+            <div class="field"><label for="tap-action">Tap</label><hui-action-editor id="tap-action" data-card-action-key="tapAction"></hui-action-editor></div>
+            <div class="field"><label for="hold-action">Hold</label><hui-action-editor id="hold-action" data-card-action-key="holdAction"></hui-action-editor></div>
+            <div class="field"><label for="double-tap-action">Double tap</label><hui-action-editor id="double-tap-action" data-card-action-key="doubleTapAction"></hui-action-editor></div>
           </div>
         </div>
 
@@ -2262,6 +2414,12 @@ class TeslaPulseCardEditor extends HTMLElement {
       });
     });
 
+    this.shadowRoot.querySelectorAll("input[data-card-visibility-key]").forEach((input) => {
+      input.addEventListener("change", (event) => {
+        this._updateConfig(event.target.dataset.cardVisibilityKey, Boolean(event.target.checked));
+      });
+    });
+
     this.shadowRoot.querySelectorAll("input[data-action-key]").forEach((input) => {
       input.addEventListener("change", (event) => {
         const key = event.target.dataset.actionKey;
@@ -2285,6 +2443,14 @@ class TeslaPulseCardEditor extends HTMLElement {
         const key = event.currentTarget.dataset.entityKey;
         const value = event.detail.value || "";
         this._updateEntityConfig(key, value);
+      });
+    });
+    this.shadowRoot.querySelectorAll("hui-action-editor[data-card-action-key]").forEach((editor) => {
+      const key = editor.dataset.cardActionKey;
+      editor.hass = this._hass;
+      editor.value = this._config[key] || DEFAULT_CONFIG[key];
+      editor.addEventListener("value-changed", (event) => {
+        this._updateConfig(key, event.detail.value || DEFAULT_CONFIG[key]);
       });
     });
 
@@ -2364,7 +2530,9 @@ class TeslaPulseCardEditor extends HTMLElement {
 
   _updateConfig(key, value) {
     const updated = { ...this._config };
-    if (value) {
+    if (typeof value === "boolean") {
+      updated[key] = value;
+    } else if (value) {
       updated[key] = value;
     } else {
       delete updated[key];
