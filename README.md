@@ -94,7 +94,7 @@ quickActions:
 vehicleModelUrl: /local/my-cybertruck.glb
 display:
   compact: false
-  showHero: true
+  showHero: false
   showCharging: true
   showStatus: true
   showControls: true
@@ -151,6 +151,11 @@ download vehicle images or models at runtime. `vehicleModelUrl` is optional and
 lets you replace the bundled model with a local Home Assistant URL. Spatial
 controls appear only when their corresponding Home Assistant entity is
 configured or detected.
+
+The card defaults to a compact, car-free layout with battery, range, and charging
+context in the header. Set `display.showHero: true` to enable the optional 3D
+vehicle stage and its spatial controls; without it, those controls are available
+in the command dock instead.
 
 Set `vehicleColor` to any glossy or matte preset provided by the visual editor.
 The card supplies factory, black, white, red, blue, gray, silver, green, and

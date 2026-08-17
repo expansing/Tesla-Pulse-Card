@@ -7,6 +7,17 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-08-17
+
+### Changed
+
+- Make the compact car-free layout the default, keeping battery, range, charging, charge-limit, tire pressure, and vehicle controls visible without the 3D stage.
+- Pack telemetry groups into a denser two-column grid in the car-free layout while preserving all diagnostics.
+
+### Removed
+
+- Remove the 3D vehicle stage and its charge rail from the compact render path; enable `display.showHero` to restore the optional 3D experience.
+
 ## [0.1.22] - 2026-08-14
 
 ### Added

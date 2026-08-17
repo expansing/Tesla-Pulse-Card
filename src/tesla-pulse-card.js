@@ -81,7 +81,7 @@ const DEFAULT_CONFIG = {
   quickActions: ["sentry", "chargePort", "wake", "honk", "flashLights", "defrost"],
   display: {
     compact: false,
-    showHero: true,
+    showHero: false,
     showCharging: true,
     showStatus: true,
     showControls: true,
@@ -311,11 +311,12 @@ class TeslaPulseCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 7;
+    return this._config?.display?.showHero ? 7 : 5;
   }
 
   getGridOptions() {
-    return { columns: 6, min_columns: 3, max_columns: 12, rows: 7, min_rows: 5 };
+    const showHero = this._config?.display?.showHero;
+    return { columns: 6, min_columns: 3, max_columns: 12, rows: showHero ? 7 : 5, min_rows: 4 };
   }
 
   _inEditMode() {
@@ -581,11 +582,25 @@ class TeslaPulseCard extends HTMLElement {
       return;
     }
 
-    const expectedSpatialActions = this._spatialControls().map((control) => control.action).join("|");
+    const expectedSpatialActions = this._config.display.showHero
+      ? this._spatialControls().map((control) => control.action).join("|")
+      : "";
     const renderedSpatialActions = [...root.querySelectorAll(".vehicle-hotspot")]
       .map((button) => button.dataset.action)
       .join("|");
     if (expectedSpatialActions !== renderedSpatialActions) {
+      this._render();
+      return;
+    }
+
+    const expectedDockActions = (this._config.display.showHero
+      ? this._sanitizeQuickActions(this._config.quickActions).filter((action) => !SPATIAL_ACTIONS.has(action))
+      : [...new Set([...this._sanitizeQuickActions(this._config.quickActions), ...SPATIAL_ACTIONS])]
+    ).filter((action) => Boolean(this._entityId(action))).join("|");
+    const renderedDockActions = [...root.querySelectorAll(".command-deck [data-action]")]
+      .map((button) => button.dataset.action)
+      .join("|");
+    if (expectedDockActions !== renderedDockActions) {
       this._render();
       return;
     }
@@ -597,7 +612,6 @@ class TeslaPulseCard extends HTMLElement {
     const isCharging = chargeState.toLowerCase() === "charging";
     const batteryProgress = Math.min(100, Math.max(0, battery ?? 0));
     const chargeLimitProgress = Math.min(100, Math.max(0, chargeLimit ?? 0));
-    const limitValuePosition = Math.min(94, Math.max(6, chargeLimitProgress));
     const telemetry = this._telemetry();
     const awakeStatus = this._awakeStatus();
 
@@ -634,6 +648,27 @@ class TeslaPulseCard extends HTMLElement {
       rangeOrbitDetail.textContent = chargeLimit === undefined ? "No limit" : `Limit ${Math.round(chargeLimit)}%`;
     }
 
+    const compactValues = [...root.querySelectorAll(".compact-summary-item strong")];
+    if (compactValues.length === 3) {
+      compactValues[0].textContent = battery === undefined ? "--" : `${Math.round(battery)}%`;
+      compactValues[1].textContent = range === undefined ? "--" : `${Math.round(range)} km`;
+      compactValues[2].textContent = isCharging ? this._value("chargePower", "--") : chargeState;
+    }
+
+    const compactEnergy = root.querySelector(".compact-energy");
+    if (compactEnergy) {
+      compactEnergy.setAttribute("aria-label", `Battery level ${batteryProgress} percent, charge limit ${chargeLimit ?? "unknown"} percent`);
+      const fill = compactEnergy.querySelector(".compact-energy-fill");
+      if (fill) {
+        fill.style.width = `${batteryProgress}%`;
+        fill.style.background = isCharging ? "var(--lime)" : "var(--ice)";
+      }
+      const limitLabel = compactEnergy.querySelector(".compact-energy-copy span:last-child");
+      if (limitLabel) limitLabel.textContent = chargeLimit === undefined ? "No limit" : `Limit ${Math.round(chargeLimit)}%`;
+      const marker = compactEnergy.querySelector(".compact-energy-limit");
+      if (marker) marker.style.left = `calc(${chargeLimitProgress}% - 1px)`;
+    }
+
     const stageStates = [...root.querySelectorAll(".stage-ribbon .stage-state")];
     if (stageStates.length === 4) {
       const stageModels = [
@@ -665,35 +700,6 @@ class TeslaPulseCard extends HTMLElement {
         const valueNode = node.querySelector("strong");
         if (valueNode) valueNode.textContent = model.value;
       });
-    }
-
-    const energyRail = root.querySelector(".energy-rail");
-    if (energyRail) {
-      energyRail.setAttribute("aria-label", `Battery level ${batteryProgress} percent, charge limit ${chargeLimit ?? "unknown"} percent`);
-      const energyFill = energyRail.querySelector(".energy-fill");
-      if (energyFill) {
-        energyFill.style.width = `${batteryProgress}%`;
-        energyFill.style.minWidth = battery === undefined ? "0" : "6px";
-        energyFill.style.background = isCharging ? "var(--lime)" : "var(--ice)";
-        energyFill.style.boxShadow = isCharging
-          ? "0 0 18px rgba(98, 230, 167, 0.62)"
-          : "0 0 18px rgba(169, 239, 255, 0.5)";
-      }
-      const energyCaption = root.querySelector(".energy-caption");
-      if (energyCaption) {
-        energyCaption.textContent = isCharging ? "Energy flowing" : "High-voltage reserve";
-      }
-      const energyValue = energyRail.querySelector(".energy-value");
-      if (energyValue) {
-        energyValue.hidden = chargeLimit === undefined;
-        energyValue.textContent = chargeLimit === undefined ? "" : `${Math.round(chargeLimit)}%`;
-        energyValue.style.left = `${limitValuePosition}%`;
-      }
-      const energyLimit = energyRail.querySelector(".energy-limit");
-      if (energyLimit) {
-        energyLimit.style.left = `calc(${chargeLimitProgress}% - 1px)`;
-        energyLimit.hidden = chargeLimit === undefined;
-      }
     }
 
     const chargingReadout = root.querySelector(".charging-readout");
@@ -1404,14 +1410,27 @@ class TeslaPulseCard extends HTMLElement {
     const resolvedThemeMode = this._resolvedThemeMode();
     const display = this._config.display || DEFAULT_CONFIG.display;
     const quickActions = this._sanitizeQuickActions(this._config.quickActions);
-    const dockActions = display.showHero
+    const dockActions = (display.showHero
       ? quickActions.filter((action) => !SPATIAL_ACTIONS.has(action))
-      : quickActions;
+      : [...new Set([...quickActions, ...SPATIAL_ACTIONS])]
+    ).filter((action) => Boolean(this._entityId(action)));
     const spatialControls = this._spatialControls();
     const batteryProgress = Math.min(100, Math.max(0, battery ?? 0));
     const chargeLimitProgress = Math.min(100, Math.max(0, chargeLimit ?? 0));
-    const limitValuePosition = Math.min(94, Math.max(6, chargeLimitProgress));
-    const imageMarkup = this._vehicleRenderMarkup();
+    const heroMarkup = display.showHero ? `
+      <div class="vehicle-stage">
+        <div class="metric-orbit battery-orbit"><span class="orbit-label">State of charge</span><strong class="orbit-value">${battery === undefined ? "--" : Math.round(battery)}<small>%</small></strong><em class="orbit-detail">${this._escape(chargeState)}</em></div>
+        <div class="metric-orbit range-orbit"><span class="orbit-label">Projected range</span><strong class="orbit-value">${range === undefined ? "--" : Math.round(range)}<small>${range === undefined ? "" : "km"}</small></strong><em class="orbit-detail">${chargeLimit === undefined ? "No limit" : `Limit ${Math.round(chargeLimit)}%`}</em></div>
+        <div class="vehicle-render">${this._vehicleRenderMarkup()}</div>
+        <div class="tire-nearby">${this._tireLine()}</div>
+        ${spatialControls.map((control) => `<button class="vehicle-hotspot hotspot-${control.anchor}" type="button" data-label="${control.label}" data-vehicle-anchor="${control.anchor}" data-action="${control.action}" aria-label="${control.ariaLabel}" title="${control.ariaLabel}"><ha-icon icon="mdi:${control.icon}"></ha-icon></button>`).join("")}
+        <div class="stage-ribbon" ${display.showStatus ? "" : "hidden"}>
+          <div class="stage-state ${this._statusTone(this._isOn("climate"))}"><span>Cabin</span><strong>${this._isOn("climate") ? "Climate active" : this._value("insideTemperature", "Climate off")}</strong></div>
+          <div class="stage-state ${this._statusTone(!this._isLocked(), !this._isLocked())}"><span>Access</span><strong>${this._isLocked() ? "Secured" : "Unlocked"}</strong></div>
+          <div class="stage-state ${this._statusTone(this._isOn("sentry"))}"><span>Guardian</span><strong>${this._isOn("sentry") ? "Sentry armed" : "Sentry off"}</strong></div>
+          <div class="stage-state ${this._statusTone(this._isOn("windows"), this._isOn("windows"))}"><span>Windows</span><strong>${this._isOn("windows") ? "Open" : "Closed"}</strong></div>
+        </div>
+      </div>` : "";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -1513,11 +1532,6 @@ class TeslaPulseCard extends HTMLElement {
         .metric + .metric { border-left: 1px solid var(--line); padding-left: 16px; }
         .metric-value { margin-top: 3px; font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: 0; }
         .metric-value span { color: var(--muted); font-size: 14px; font-weight: 600; }
-        .battery-track { position: relative; height: 10px; margin: 0 20px; overflow: visible; border-radius: 3px; background: var(--line); }
-        .battery-level { height: 100%; width: ${batteryProgress}%; min-width: ${battery === undefined ? 0 : 4}px; border-radius: inherit; background: ${isCharging ? "var(--accent)" : "var(--primary-text-color, #1f2522)"}; transition: width 180ms ease-out; }
-        .charge-limit { position: absolute; top: -5px; left: calc(${chargeLimitProgress}% - 1px); width: 2px; height: 20px; background: var(--warning); }
-        .charge-copy { display: flex; justify-content: space-between; gap: 12px; padding: 9px 20px 18px; color: var(--muted); font-size: 13px; }
-        .charge-copy strong { color: var(--primary-text-color, #1f2522); font-weight: 700; }
         .charging-readout { padding: 14px 20px 17px; border-top: 1px solid var(--line); background: var(--accent-soft); }
         .charging-readout[hidden] { display: none; }
         .charging-values { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 6px; color: var(--primary-text-color, #1f2522); font-size: 14px; font-weight: 650; }
@@ -1621,6 +1635,21 @@ class TeslaPulseCard extends HTMLElement {
         }
         .cockpit.no-stage { min-height: 96px; }
         .cockpit.no-stage::before { display: none; }
+        .compact-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin: 16px 24px 20px; border: 1px solid var(--tone-line); background: var(--tone-line); }
+        .compact-summary-item { min-width: 0; padding: 10px 12px; background: var(--tone-bg); }
+        .compact-summary-item span { display: block; color: var(--tone-muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+        .compact-summary-item strong { display: block; margin-top: 5px; overflow: hidden; color: var(--tone-text); font-size: 18px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+        .compact-summary-item strong small { color: var(--ice); font-size: 11px; }
+        .compact-energy { margin: -8px 24px 12px; }
+        .compact-energy-copy { display: flex; justify-content: space-between; margin-bottom: 5px; color: var(--tone-muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+        .compact-energy-track { position: relative; height: 5px; background: var(--tone-line); }
+        .compact-energy-fill { height: 100%; width: ${batteryProgress}%; min-width: ${battery === undefined ? 0 : 4}px; background: ${isCharging ? "var(--lime)" : "var(--ice)"}; }
+        .compact-energy-limit { position: absolute; top: -3px; left: calc(${chargeLimitProgress}% - 1px); width: 2px; height: 11px; background: var(--ember); }
+        .compact-tires { margin: 0 24px 16px; }
+        .compact-tires .tire-line { border-radius: 0; }
+        .compact-tires .tire-line span, .compact-tires .tire-line button { padding: 6px 5px; }
+        .compact-tires .tire-line b { font-size: 8px; }
+        .compact-tires .tire-line strong { margin-top: 2px; font-size: 12px; }
         .cockpit .topline { position: relative; z-index: 4; padding: 22px 24px 0; }
         .vehicle-title { display: flex; align-items: center; gap: 8px; }
         .vehicle-title ha-icon { width: 21px; height: 21px; color: var(--ice); }
@@ -1679,13 +1708,6 @@ class TeslaPulseCard extends HTMLElement {
         .stage-state strong { display: block; margin-top: 4px; overflow: hidden; color: var(--tone-text); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
         .stage-state.is-active strong { color: var(--lime); }
         .stage-state.is-alert strong { color: #ff776e; }
-        .energy-rail { position: absolute; z-index: 4; left: 24px; right: 24px; bottom: 24px; height: 6px; overflow: visible; background: var(--tone-line); }
-        .energy-fill { position: relative; height: 100%; width: ${batteryProgress}%; min-width: ${battery === undefined ? 0 : 6}px; background: ${isCharging ? "var(--lime)" : "var(--ice)"}; box-shadow: 0 0 18px ${isCharging ? "rgba(98, 230, 167, 0.62)" : "rgba(169, 239, 255, 0.5)"}; }
-        .energy-fill::after { content: ""; position: absolute; inset: -3px 0 -3px auto; width: 2px; background: #fff; }
-        .energy-limit { position: absolute; top: -5px; left: calc(${chargeLimitProgress}% - 1px); width: 2px; height: 16px; background: var(--ember); }
-        .energy-value { position: absolute; bottom: 11px; z-index: 1; min-width: 34px; color: var(--ember); font-size: 12px; font-weight: 800; letter-spacing: 0; text-align: center; transform: translateX(-50%); }
-        .energy-value[hidden] { display: none; }
-        .energy-caption { position: absolute; z-index: 4; right: 24px; bottom: 4px; color: var(--tone-muted); font-size: 10px; }
         .charging-readout { position: relative; z-index: 2; padding: 13px 24px 15px; border-top: 1px solid var(--tone-line); background: var(--tone-bg); color: var(--tone-text); }
         .charging-readout .status-label { color: var(--lime); }
         .charging-readout .charging-values { color: var(--tone-text); }
@@ -1698,12 +1720,18 @@ class TeslaPulseCard extends HTMLElement {
         .command-deck .control:hover { border-color: rgba(169, 239, 255, 0.62); background: rgba(169, 239, 255, 0.1); }
         .command-deck .control ha-icon { width: 22px; height: 22px; margin: 0; color: var(--ice); }
         .command-deck .control-label { overflow: visible; color: var(--tone-text); font-size: 11px; line-height: 1.2; text-overflow: clip; white-space: normal; }
+        .card.car-free .command-deck { padding: 16px; }
+        .card.car-free .command-deck .section-heading { margin-bottom: 10px; }
+        .card.car-free .command-deck .controls { grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: 7px; }
+        .card.car-free .command-deck .control { grid-template-rows: 21px minmax(22px, auto); min-height: 64px; padding: 8px 5px 7px; }
+        .card.car-free .command-deck .control ha-icon { width: 19px; height: 19px; }
+        .card.car-free .command-deck .control-label { font-size: 10px; }
         .telemetry-surface, .systems { background: var(--tone-bg); color: var(--tone-text); }
-        .systems { border-top: 0; padding: 24px; }
-        .systems .section-heading { margin-bottom: 16px; }
-        .systems .section-heading h2 { color: var(--tone-text); font-size: 17px; }
+        .systems { border-top: 0; padding: 12px; }
+        .systems .section-heading { margin-bottom: 7px; }
+        .systems .section-heading h2 { color: var(--tone-text); font-size: 14px; }
         .systems .status-label { color: var(--tone-muted); }
-        .systems-grid { gap: 14px; border: 0; background: transparent; }
+        .systems-grid { gap: 8px; border: 0; background: transparent; }
         .system-group { position: relative; display: grid; grid-template-columns: 1fr; gap: 0; min-width: 0; padding: 0; border: 0; border-top: 2px solid var(--system-accent, var(--ice)); border-radius: 0; background: transparent; color: var(--tone-text); }
         .system-group::before { display: none; }
         .system-environment { --system-accent: #62e6a7; }
@@ -1712,17 +1740,26 @@ class TeslaPulseCard extends HTMLElement {
         .system-charging { --system-accent: #a9efff; }
         .system-custom { --system-accent: #ff8f70; }
         .system-tires { --system-accent: #bba7ff; }
-        .system-title { display: flex; align-items: center; gap: 8px; min-height: 34px; margin: 0; padding: 0 4px; border: 0; background: transparent; color: var(--system-accent); font-size: 10px; }
-        .system-title ha-icon { width: 17px; height: 17px; color: currentColor; }
-        .system-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); grid-template-rows: 1fr 2px; column-gap: 12px; align-items: center; min-height: 46px; padding: 7px 4px; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--system-accent) 18%, var(--tone-line)); border-radius: 0; background: transparent; color: var(--tone-muted); text-align: left; }
+        .system-title { display: flex; align-items: center; gap: 6px; min-height: 24px; margin: 0; padding: 0 2px; border: 0; background: transparent; color: var(--system-accent); font-size: 9px; }
+        .system-title ha-icon { width: 15px; height: 15px; color: currentColor; }
+        .system-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); grid-template-rows: 1fr 1px; column-gap: 8px; align-items: center; min-height: 32px; padding: 4px 2px; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--system-accent) 18%, var(--tone-line)); border-radius: 0; background: transparent; color: var(--tone-muted); text-align: left; }
         button.system-row { cursor: pointer; font: inherit; }
         button.system-row:hover { background: color-mix(in srgb, var(--system-accent) 8%, transparent); }
         button.system-row:focus-visible { outline: 2px solid var(--system-accent); outline-offset: 2px; }
         .system-row { --effective-accent: var(--row-accent, var(--system-accent)); }
-        .system-row span { min-width: 0; overflow: hidden; font-size: 10px; font-weight: 800; letter-spacing: 0; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
-        .system-row strong { max-width: 128px; overflow: hidden; color: var(--tone-text); font-size: 14px; line-height: 1; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
-        .system-row i { grid-column: 1 / -1; display: block; height: 2px; opacity: 0.68; background: linear-gradient(90deg, var(--effective-accent), transparent 66%); }
+        .system-row span { min-width: 0; overflow: hidden; font-size: 9px; font-weight: 800; letter-spacing: 0; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+        .system-row strong { max-width: 128px; overflow: hidden; color: var(--tone-text); font-size: 12px; line-height: 1; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+        .system-row i { grid-column: 1 / -1; display: block; height: 1px; opacity: 0.5; background: linear-gradient(90deg, var(--effective-accent), transparent 66%); }
         .system-row span ha-icon { width: 15px; height: 15px; color: var(--effective-accent); }
+        .card.car-free .systems { padding: 10px 12px 12px; }
+        .card.car-free .systems-grid { gap: 7px; }
+        .card.car-free .system-group { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; }
+        .card.car-free .system-title { grid-column: 1 / -1; min-height: 22px; font-size: 8px; }
+        .card.car-free .system-title ha-icon { width: 13px; height: 13px; }
+        .card.car-free .system-row { min-height: 28px; padding: 3px 1px; column-gap: 5px; grid-template-rows: 1fr; }
+        .card.car-free .system-row span { font-size: 8px; }
+        .card.car-free .system-row strong { max-width: 88px; font-size: 11px; }
+        .card.car-free .system-row i { display: none; }
         .custom-sensor-row { --row-accent: var(--custom-accent); }
         .custom-sensor-row span { display: inline-flex; align-items: center; gap: 6px; }
         .custom-sensor-row ha-icon { width: 15px; height: 15px; color: var(--custom-accent); }
@@ -1760,14 +1797,14 @@ class TeslaPulseCard extends HTMLElement {
           .stage-ribbon { left: 16px; right: 16px; bottom: 54px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .stage-state:nth-child(2) { border-right: 0; }
           .stage-state:nth-child(-n+2) { border-bottom: 1px solid rgba(169, 239, 255, 0.12); }
-          .energy-rail { left: 16px; right: 16px; bottom: 22px; }
           .charging-readout, .command-deck, .systems { padding-left: 16px; padding-right: 16px; }
           .command-deck .controls { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
           .command-deck .control { min-height: 86px; }
           .systems-grid { grid-template-columns: 1fr; }
+          .card.car-free .system-group { grid-template-columns: 1fr; }
         }
       </style>
-      <article class="card theme-${resolvedThemeMode} ${display.compact ? "compact" : ""}" aria-label="${this._escape(this._config.title)} dashboard" data-card-action-surface>
+      <article class="card theme-${resolvedThemeMode} ${display.compact ? "compact" : ""} ${display.showHero ? "" : "car-free"}" aria-label="${this._escape(this._config.title)} dashboard" data-card-action-surface>
         <section class="cockpit ${display.showHero ? "" : "no-stage"}">
           <header class="topline">
             <div><span class="eyebrow">Tesla Pulse / Vehicle link</span><div class="vehicle-title" ${this._config.showName || this._config.showIcon ? "" : "hidden"}>${this._config.showIcon ? `<ha-icon icon="mdi:${this._escape(this._config.icon)}"></ha-icon>` : ""}${this._config.showName ? `<h1>${this._escape(this._config.title)}</h1>` : ""}</div></div>
@@ -1776,20 +1813,17 @@ class TeslaPulseCard extends HTMLElement {
               <div class="telemetry ${telemetry.state}"><span class="telemetry-label">${telemetry.label}</span><span>${telemetry.detail}</span></div>
             </div>
           </header>
-          <div class="vehicle-stage" ${display.showHero ? "" : "hidden"}>
-            <div class="metric-orbit battery-orbit"><span class="orbit-label">State of charge</span><strong class="orbit-value">${battery === undefined ? "--" : Math.round(battery)}<small>%</small></strong><em class="orbit-detail">${this._escape(chargeState)}</em></div>
-            <div class="metric-orbit range-orbit"><span class="orbit-label">Projected range</span><strong class="orbit-value">${range === undefined ? "--" : Math.round(range)}<small>${range === undefined ? "" : "km"}</small></strong><em class="orbit-detail">${chargeLimit === undefined ? "No limit" : `Limit ${Math.round(chargeLimit)}%`}</em></div>
-            <div class="vehicle-render">${imageMarkup}</div>
-            <div class="tire-nearby">${this._tireLine()}</div>
-            ${spatialControls.map((control) => `<button class="vehicle-hotspot hotspot-${control.anchor}" type="button" data-label="${control.label}" data-vehicle-anchor="${control.anchor}" data-action="${control.action}" aria-label="${control.ariaLabel}" title="${control.ariaLabel}"><ha-icon icon="mdi:${control.icon}"></ha-icon></button>`).join("")}
-            <div class="stage-ribbon" ${display.showStatus ? "" : "hidden"}>
-              <div class="stage-state ${this._statusTone(this._isOn("climate"))}"><span>Cabin</span><strong>${this._isOn("climate") ? "Climate active" : this._value("insideTemperature", "Climate off")}</strong></div>
-              <div class="stage-state ${this._statusTone(!this._isLocked(), !this._isLocked())}"><span>Access</span><strong>${this._isLocked() ? "Secured" : "Unlocked"}</strong></div>
-              <div class="stage-state ${this._statusTone(this._isOn("sentry"))}"><span>Guardian</span><strong>${this._isOn("sentry") ? "Sentry armed" : "Sentry off"}</strong></div>
-              <div class="stage-state ${this._statusTone(this._isOn("windows"), this._isOn("windows"))}"><span>Windows</span><strong>${this._isOn("windows") ? "Open" : "Closed"}</strong></div>
-            </div>
-            <div class="energy-rail" aria-label="Battery level ${batteryProgress} percent, charge limit ${chargeLimit ?? "unknown"} percent"><div class="energy-fill"></div><span class="energy-value" style="left: ${limitValuePosition}%" ${chargeLimit === undefined ? "hidden" : ""}>${chargeLimit === undefined ? "" : `${Math.round(chargeLimit)}%`}</span>${chargeLimit === undefined ? "" : `<span class="energy-limit" title="Charge limit ${Math.round(chargeLimit)} percent"></span>`}</div><span class="energy-caption">${isCharging ? "Energy flowing" : "High-voltage reserve"}</span>
+          <div class="compact-summary" ${display.showHero ? "hidden" : ""}>
+            <div class="compact-summary-item"><span>Battery</span><strong>${battery === undefined ? "--" : `${Math.round(battery)}%`}</strong></div>
+            <div class="compact-summary-item"><span>Range</span><strong>${range === undefined ? "--" : `${Math.round(range)} `}<small>${range === undefined ? "" : "km"}</small></strong></div>
+            <div class="compact-summary-item"><span>Charging</span><strong>${this._escape(isCharging ? this._value("chargePower", "--") : chargeState)}</strong></div>
           </div>
+          <div class="compact-energy" ${display.showHero ? "hidden" : ""} aria-label="Battery level ${batteryProgress} percent, charge limit ${chargeLimit ?? "unknown"} percent">
+            <div class="compact-energy-copy"><span>Charge</span><span>${chargeLimit === undefined ? "No limit" : `Limit ${Math.round(chargeLimit)}%`}</span></div>
+            <div class="compact-energy-track"><div class="compact-energy-fill"></div>${chargeLimit === undefined ? "" : `<span class="compact-energy-limit" title="Charge limit ${Math.round(chargeLimit)} percent"></span>`}</div>
+          </div>
+          <div class="compact-tires" ${display.showHero ? "hidden" : ""}>${this._tireLine()}</div>
+          ${heroMarkup}
         </section>
         <section class="charging-readout" ${(isCharging && display.showCharging) ? "" : "hidden"} aria-label="Charging details">
           <span class="status-label">Charging link active</span>
